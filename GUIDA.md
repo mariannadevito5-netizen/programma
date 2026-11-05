@@ -15,7 +15,7 @@ Sono tre passi da fare una volta sola, in tutto circa 20 minuti. Fai i primi due
 
 Senza il passo 2 l'app funziona già: obiettivi e priorità si salvano sul dispositivo, ma non vedi il calendario.
 
-## Passo 2. Collegare Google Calendar e Google Drive
+## Passo 2. Collegare Google Calendar e Google Fogli
 
 Google chiede a ogni app che legge il calendario di avere un suo "accesso". Lo crei tu, così resta solo tuo.
 
@@ -24,6 +24,7 @@ Google chiede a ogni app che legge il calendario di avere un suo "accesso". Lo c
 3. Nel menu a sinistra: **API e servizi**, poi **Libreria**. Cerca e attiva una alla volta:
    - **Google Calendar API**
    - **Google Drive API**
+   - **Google Sheets API**
 4. Nel menu: **Google Auth Platform** (in alcune versioni si chiama **Schermata consenso OAuth**). Premi **Inizia** e compila:
    - Nome app: `Agenda di Mary`
    - Email di assistenza: la tua
@@ -33,7 +34,7 @@ Google chiede a ogni app che legge il calendario di avere un suo "accesso". Lo c
 6. Apri **Accesso ai dati** (o **Ambiti**), premi **Aggiungi o rimuovi ambiti** e incolla questi due, uno per riga:
    ```
    https://www.googleapis.com/auth/calendar.events
-   https://www.googleapis.com/auth/drive.appdata
+   https://www.googleapis.com/auth/drive.file
    ```
    Salva.
 7. Apri **Client**, poi **Crea client**:
@@ -56,5 +57,6 @@ Poi apri l'app dall'icona e tocca **Accedi con Google**.
 ## Cose da sapere
 
 - L'accesso a Google dura circa un'ora. Quando riapri l'app dopo, ti fa rientrare in automatico o con un tocco.
-- Obiettivi, step, priorità e impostazioni sono salvati in un file nascosto del tuo Google Drive (pochi KB). In alto vedi "Salvato su Drive" quando è tutto a posto.
+- Obiettivi, step, priorità e impostazioni sono salvati nel Foglio Google **Agenda di Mary**, che l'app crea nel tuo Drive al primo accesso (pochi KB). Lo puoi aprire dal computer e Claude può aggiornarlo nei check-in. In alto vedi "Salvato sul Foglio Google" quando è tutto a posto.
+- Se modifichi il Foglio a mano, l'app legge le modifiche quando la riapri. Per aggiungere uno step basta una riga nuova con lo stesso "ID obiettivo" e la colonna "ID step" vuota.
 - Gli eventi restano su Google Calendar: quello che aggiungi dall'app lo vedi anche lì, e viceversa.

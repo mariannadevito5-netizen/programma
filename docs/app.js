@@ -3,8 +3,7 @@
 
   const CFG = window.AGENDA_CONFIG || {};
   const TZ = CFG.timeZone || "Europe/Rome";
-  const SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.appdata";
-  const DATA_FILE = "agenda-mary.json";
+  const SCOPES = "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/drive.file";
   const LS_DATA = "agenda.data.v1";
   const LS_TOKEN = "agenda.token.v1";
   const LS_VIEW = "agenda.view";
@@ -192,52 +191,117 @@
     return res;
   }
 
-  // ---------- Google Drive ----------
-  let driveFileId = null, saveTimer = null, saveChain = Promise.resolve();
-  async function driveFind() {
-    const q = encodeURIComponent("name='" + DATA_FILE + "'");
-    const r = await gfetch("https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q=" + q);
-    const j = await r.json();
-    return j.files && j.files[0] ? j.files[0].id : null;
-  }
-  async function driveRead(id) { const r = await gfetch("https://www.googleapis.com/drive/v3/files/" + id + "?alt=media"); return r.json(); }
-  async function driveWrite() {
-    const body = JSON.stringify(state.data);
-    if (driveFileId) {
-      await gfetch("https://www.googleapis.com/upload/drive/v3/files/" + driveFileId + "?uploadType=media", { method: "PATCH", headers: { "Content-Type": "application/json" }, body });
-      return;
+  // ---------- Google Fogli ----------
+  // I dati stanno in un Foglio Google "Agenda di Mary" nel Drive di Mary:
+  // si legge anche dal computer e Claude può aggiornarlo nei check-in.
+  const SHEET_TITLE = "Agenda di Mary";
+  const LS_SHEET = "agenda.sheet.v1";
+  const LS_DIRTY = "agenda.dirty.v1";
+  const H_GOALS = ["ID obiettivo", "Obiettivo", "Nome breve", "Colore", "Scadenza", "Data indicativa", "ID step", "Step", "Mese", "Fatto"];
+  const H_DAYS = ["Data", "Priorità 1", "Priorità 2", "Priorità 3", "Fatta 1", "Fatta 2", "Fatta 3"];
+  const H_SET = ["Impostazione", "Valore"];
+  let sheetId = null, saveTimer = null, saveChain = Promise.resolve(), lastRead = 0;
+  try { sheetId = localStorage.getItem(LS_SHEET); } catch (e) {}
+  function isDirty() { try { return localStorage.getItem(LS_DIRTY) === "1"; } catch (e) { return false; } }
+  function setDirty(v) { try { if (v) localStorage.setItem(LS_DIRTY, "1"); else localStorage.removeItem(LS_DIRTY); } catch (e) {} }
+  function yes(v) { return /^(sì|si|x|true|vero|1|fatto|fatta)$/i.test(String(v || "").trim()); }
+  function sheetUrl() { return sheetId ? "https://docs.google.com/spreadsheets/d/" + sheetId : null; }
+  const SAPI = "https://sheets.googleapis.com/v4/spreadsheets";
+
+  async function sheetFind() {
+    if (sheetId) {
+      try { await gfetch(SAPI + "/" + sheetId + "?fields=spreadsheetId"); return sheetId; }
+      catch (e) { if (e instanceof AuthError) throw e; sheetId = null; }
     }
-    const boundary = "agenda" + uid();
-    const meta = JSON.stringify({ name: DATA_FILE, parents: ["appDataFolder"], mimeType: "application/json" });
-    const multipart = "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + meta + "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + body + "\r\n--" + boundary + "--";
-    const r = await gfetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id", { method: "POST", headers: { "Content-Type": "multipart/related; boundary=" + boundary }, body: multipart });
-    driveFileId = (await r.json()).id;
+    const q = encodeURIComponent("name='" + SHEET_TITLE + "' and mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
+    const r = await gfetch("https://www.googleapis.com/drive/v3/files?fields=files(id)&orderBy=createdTime&q=" + q);
+    const j = await r.json();
+    sheetId = j.files && j.files[0] ? j.files[0].id : null;
+    if (sheetId) try { localStorage.setItem(LS_SHEET, sheetId); } catch (e) {}
+    return sheetId;
   }
-  async function syncFromDrive() {
+  async function sheetCreate() {
+    const r = await gfetch(SAPI, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
+      properties: { title: SHEET_TITLE, locale: "it_IT", timeZone: TZ },
+      sheets: ["Obiettivi", "Priorità", "Impostazioni"].map((t, i) => ({ properties: { sheetId: i, title: t, gridProperties: { frozenRowCount: 1 } } }))
+    }) });
+    sheetId = (await r.json()).spreadsheetId;
+    try { localStorage.setItem(LS_SHEET, sheetId); } catch (e) {}
+  }
+  function toRows() {
+    const d = state.data;
+    const goals = [H_GOALS];
+    for (const g of d.obiettivi) {
+      const base = [g.id, g.nome, g.breve || "", g.colore, g.scadenza || "", g.indicativa ? "sì" : "no"];
+      if (!g.step.length) goals.push(base.concat(["", "", "", ""]));
+      for (const s of g.step) goals.push(base.concat([s.id, s.testo, s.mese || "", s.fatto ? "sì" : ""]));
+    }
+    const days = [H_DAYS].concat(Object.keys(d.giorni).sort().map(k => { const g = d.giorni[k]; return [k].concat(g.priorita.slice(0, 3), g.fatte.slice(0, 3).map(x => x ? "sì" : "")); }));
+    const set = [H_SET].concat(Object.keys(d.settings).map(k => [k, d.settings[k]]));
+    return { goals, days, set };
+  }
+  function fromRows(goalRows, dayRows, setRows) {
+    const d = { version: 1, updatedAt: Date.now(), settings: Object.assign({}, seedData().settings), giorni: {}, obiettivi: [] };
+    const byId = {};
+    for (const r of (goalRows || []).slice(1)) {
+      const name = String(r[1] || "").trim(); if (!name && !r[0]) continue;
+      const gid = String(r[0] || "").trim() || name.toLowerCase().replace(/[^a-z0-9]+/g, "-").slice(0, 20) || uid();
+      let g = byId[gid];
+      if (!g) {
+        g = { id: gid, nome: name || gid, breve: String(r[2] || "").trim(), colore: GOAL_COLORS.includes(String(r[3]).trim()) ? String(r[3]).trim() : GOAL_COLORS[d.obiettivi.length % GOAL_COLORS.length], scadenza: String(r[4] || "").trim(), indicativa: !/^no$/i.test(String(r[5] || "").trim()), step: [] };
+        byId[gid] = g; d.obiettivi.push(g);
+      }
+      const testo = String(r[7] || "").trim();
+      if (testo) g.step.push({ id: String(r[6] || "").trim() || uid(), testo, mese: String(r[8] || "").trim().slice(0, 7), fatto: yes(r[9]) });
+    }
+    for (const g of d.obiettivi) g.step.sort((a, b) => (a.mese || "9").localeCompare(b.mese || "9"));
+    for (const r of (dayRows || []).slice(1)) {
+      const k = String(r[0] || "").trim(); if (!/^\d{4}-\d{2}-\d{2}$/.test(k)) continue;
+      d.giorni[k] = { priorita: [1, 2, 3].map(i => String(r[i] || "")), fatte: [4, 5, 6].map(i => yes(r[i])) };
+    }
+    for (const r of (setRows || []).slice(1)) { const k = String(r[0] || "").trim(); if (k in d.settings && r[1]) d.settings[k] = String(r[1]).trim(); }
+    return d;
+  }
+  async function sheetRead() {
+    const p = ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50"].map(x => "ranges=" + encodeURIComponent(x)).join("&");
+    const r = await gfetch(SAPI + "/" + sheetId + "/values:batchGet?valueRenderOption=FORMATTED_VALUE&" + p);
+    const j = await r.json();
+    const v = (j.valueRanges || []).map(x => x.values || []);
+    lastRead = Date.now();
+    return { empty: (v[0] || []).length <= 1, data: fromRows(v[0], v[1], v[2]) };
+  }
+  async function sheetWrite() {
+    if (!sheetId && !(await sheetFind())) await sheetCreate();
+    const rows = toRows();
+    await gfetch(SAPI + "/" + sheetId + "/values:batchClear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ranges: ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50"] }) });
+    await gfetch(SAPI + "/" + sheetId + "/values:batchUpdate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valueInputOption: "RAW", data: [
+      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }
+    ] }) });
+    setDirty(false); lastRead = Date.now();
+  }
+  async function syncSheet() {
     if (!getToken()) return;
     try {
-      driveFileId = await driveFind();
-      if (driveFileId) {
-        const remote = await driveRead(driveFileId);
-        if (remote && remote.version && (remote.updatedAt || 0) > (state.data.updatedAt || 0)) {
-          state.data = remote; writeLocal(); state.sync = "saved"; renderAll(); return;
-        }
-      }
-      if (!driveFileId || (state.data.updatedAt || 0) > 0) await driveWrite();
+      if (isDirty()) { await sheetWrite(); state.sync = "saved"; renderTop(); return; }
+      if (!(await sheetFind())) { await sheetWrite(); state.sync = "saved"; renderAll(); return; }
+      const res = await sheetRead();
+      if (res.empty) await sheetWrite();
+      else { state.data = res.data; writeLocal(); }
       state.sync = "saved";
+      renderAll();
     } catch (e) {
       state.sync = e instanceof AuthError ? "local" : "error";
+      renderTop();
     }
-    renderTop();
   }
   function changed() {
     state.data.updatedAt = Date.now();
-    writeLocal();
+    writeLocal(); setDirty(true);
     if (!getToken()) { state.sync = "local"; renderTop(); return; }
     state.sync = "saving"; renderTop();
     clearTimeout(saveTimer);
     saveTimer = setTimeout(() => {
-      saveChain = saveChain.then(driveWrite).then(() => { state.sync = "saved"; }, e => { state.sync = e instanceof AuthError ? "local" : "error"; }).then(renderTop);
+      saveChain = saveChain.then(sheetWrite).then(() => { state.sync = "saved"; }, e => { state.sync = e instanceof AuthError ? "local" : "error"; }).then(renderTop);
     }, 1200);
   }
 
@@ -343,11 +407,11 @@
     const el = document.getElementById("sync");
     if (!el) return;
     const logged = !!getToken();
-    el.textContent = !logged ? "Salvato su questo dispositivo" : state.sync === "saving" ? "Salvo su Drive…" : state.sync === "error" ? "Drive non risponde, salvato qui" : "Salvato su Drive";
+    el.textContent = !logged ? "Salvato su questo dispositivo" : state.sync === "saving" ? "Salvo sul Foglio Google…" : state.sync === "error" ? "Google non risponde, salvato qui" : "Salvato sul Foglio Google";
   }
   function loginCard() {
-    if (!CFG.googleClientId) return '<div class="notice info"><strong>Google non è ancora collegato.</strong><span class="muted">Obiettivi e priorità funzionano già e restano su questo dispositivo. Per vedere il calendario e salvare su Drive segui il passo 2 della guida.</span></div>';
-    return '<div class="notice info"><strong>' + (hadLogin() ? "Accedi di nuovo a Google" : "Collega il tuo Google Calendar") + '</strong><span class="muted">' + (hadLogin() ? "L'accesso dura circa un'ora, poi Google lo richiede per sicurezza." : "Vedrai i tuoi eventi e i dati si salveranno anche su Google Drive.") + '</span><div><button class="btn sm" data-login>Accedi con Google</button></div></div>';
+    if (!CFG.googleClientId) return '<div class="notice info"><strong>Google non è ancora collegato.</strong><span class="muted">Obiettivi e priorità funzionano già e restano su questo dispositivo. Per vedere il calendario e salvare su Google segui il passo 2 della guida.</span></div>';
+    return '<div class="notice info"><strong>' + (hadLogin() ? "Accedi di nuovo a Google" : "Collega il tuo Google Calendar") + '</strong><span class="muted">' + (hadLogin() ? "L'accesso dura circa un'ora, poi Google lo richiede per sicurezza." : "Vedrai i tuoi eventi e i dati si salveranno in un Foglio Google, leggibile anche dal computer.") + '</span><div><button class="btn sm" data-login>Accedi con Google</button></div></div>';
   }
   function calNotice() {
     if (state.cal === "idle") return loginCard();
@@ -587,6 +651,8 @@
     document.getElementById("set-sab-a").value = s.sabatoInizio;
     document.getElementById("set-sab-b").value = s.sabatoFine;
     document.getElementById("set-account").innerHTML = getToken() ? '<button class="btn ghost sm" id="do-logout">Esci da Google</button>' : CFG.googleClientId ? '<button class="btn sm" data-login>Accedi con Google</button>' : '<span class="muted small">Google non è ancora configurato (guida, passo 2).</span>';
+    const url = sheetUrl();
+    if (getToken() && url) document.getElementById("set-account").insertAdjacentHTML("beforeend", ' <a class="btn ghost sm" href="' + url + '" target="_blank" rel="noopener">Apri il Foglio dati</a>');
     const lo = document.getElementById("do-logout"); if (lo) lo.onclick = () => { logout(); document.getElementById("set-sheet").hidden = true; };
     document.getElementById("set-sheet").hidden = false;
   }
@@ -689,14 +755,16 @@
   try { if (startView === "oggi") startView = localStorage.getItem(LS_VIEW) || "oggi"; } catch (e) {}
   setView(startView);
 
-  if (getToken()) { loadWeek(); syncFromDrive(); }
+  if (getToken()) { loadWeek(); syncSheet(); }
   else if (CFG.googleClientId && hadLogin()) {
     // accesso scaduto: un tentativo silenzioso per sessione, poi il pulsante
     let failed = false; try { failed = sessionStorage.getItem("agenda.silent.failed") === "1" || sessionStorage.getItem("agenda.silent.tried") === "1"; sessionStorage.setItem("agenda.silent.tried", "1"); } catch (e) { failed = true; }
     if (!failed && navigator.onLine !== false) login(true);
   }
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "visible" && getToken() && state.fetchedAt && Date.now() - state.fetchedAt > 5 * 60000) loadWeek();
+    if (document.visibilityState !== "visible" || !getToken()) return;
+    if (state.fetchedAt && Date.now() - state.fetchedAt > 5 * 60000) loadWeek();
+    if (!isDirty() && Date.now() - lastRead > 2 * 60000) syncSheet();
   });
 
   if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
