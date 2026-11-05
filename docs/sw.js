@@ -1,6 +1,6 @@
 // Tiene l'app disponibile anche senza rete. Prima prova la rete (così gli
 // aggiornamenti arrivano subito), poi usa la copia salvata.
-const CACHE = "agenda-v3";
+const CACHE = "agenda-v4";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {

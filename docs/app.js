@@ -15,7 +15,7 @@
   const MESI_BREVI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 
   const CATS = [
-    { key: "lavoro", label: "Lavoro", words: ["turno", "palestra", "lavoro", "reception"] },
+    { key: "lavoro", label: "Lavoro", words: ["turno", "palestra", "lavoro", "reception", "vibe"] },
     { key: "psico", label: "Psicologa", words: ["serenis", "psicolog", "simona", "seduta", "terapia"] },
     { key: "danza", label: "Danza", words: ["danza", "prove", "nebula", "perypezye", "spettacolo", "coreograf"] },
     { key: "studio", label: "Studio", words: [" pt ", "studio", "tesi", "inglese", "b2", "esame", "lezione", "corso", "teoria", "universit"] },
@@ -749,6 +749,13 @@
 
   document.getElementById("open-add").onclick = () => openAdd();
   document.getElementById("open-settings").onclick = openSettings;
+  document.getElementById("refresh").onclick = async () => {
+    if (!getToken()) { if (CFG.googleClientId) login(false); return; }
+    const b = document.getElementById("refresh"); b.disabled = true;
+    await Promise.all([loadWeek(), syncSheet()]);
+    b.disabled = false;
+    toast(state.cal === "ok" ? "Calendario e obiettivi aggiornati" : "Non sono riuscita ad aggiornare. Riprova tra poco.");
+  };
   document.querySelectorAll("[data-close]").forEach(b => b.onclick = () => { document.getElementById(b.dataset.close).hidden = true; });
   document.querySelectorAll(".sheet-bg").forEach(bg => bg.addEventListener("click", e => { if (e.target === bg) bg.hidden = true; }));
   document.addEventListener("keydown", e => { if (e.key === "Escape") document.querySelectorAll(".sheet-bg").forEach(b => { b.hidden = true; }); });
