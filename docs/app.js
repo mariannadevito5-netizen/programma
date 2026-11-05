@@ -193,7 +193,7 @@
 
   // ---------- Google Fogli ----------
   // I dati stanno in un Foglio Google "Agenda di Mary" nel Drive di Mary:
-  // si legge anche dal computer e Claude può aggiornarlo nei check-in.
+  // si legge anche dal computer e Claude può leggerlo nei check-in.
   const SHEET_TITLE = "Agenda di Mary";
   const LS_SHEET = "agenda.sheet.v1";
   const LS_DIRTY = "agenda.dirty.v1";

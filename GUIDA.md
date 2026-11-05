@@ -57,6 +57,6 @@ Poi apri l'app dall'icona e tocca **Accedi con Google**.
 ## Cose da sapere
 
 - L'accesso a Google dura circa un'ora. Quando riapri l'app dopo, ti fa rientrare in automatico o con un tocco.
-- Obiettivi, step, priorità e impostazioni sono salvati nel Foglio Google **Agenda di Mary**, che l'app crea nel tuo Drive al primo accesso (pochi KB). Lo puoi aprire dal computer e Claude può aggiornarlo nei check-in. In alto vedi "Salvato sul Foglio Google" quando è tutto a posto.
+- Obiettivi, step, priorità e impostazioni sono salvati nel Foglio Google **Agenda di Mary**, che l'app crea nel tuo Drive al primo accesso (pochi KB). Lo puoi aprire dal computer e Claude può leggerlo nei check-in per vedere a che punto sei. In alto vedi "Salvato sul Foglio Google" quando è tutto a posto.
 - Se modifichi il Foglio a mano, l'app legge le modifiche quando la riapri. Per aggiungere uno step basta una riga nuova con lo stesso "ID obiettivo" e la colonna "ID step" vuota.
 - Gli eventi restano su Google Calendar: quello che aggiungi dall'app lo vedi anche lì, e viceversa.
