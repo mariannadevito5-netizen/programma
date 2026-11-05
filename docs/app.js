@@ -1076,6 +1076,23 @@
   document.getElementById("set-save").onclick = saveSettings;
   ["add-date", "add-title", "add-start", "add-end"].forEach(id => document.getElementById(id).addEventListener("input", updateSummary));
 
+  // Funzioni usate da voce.js ("Dimmi cosa fare")
+  if (window.AgendaVoce) window.AgendaVoce.init({
+    TZ, esc, euro, ymd, hm, parseYmd, addDays, startOfDay, daysBetween, localIso, fmtDay, fmtShortDay,
+    gfetch, normalize, createEvent, getToken, allItems, payItem, toggleStep, toast,
+    isAuthError: e => e instanceof AuthError,
+    catText: key => { const c = CATS.find(x => x.key === key); return c ? c.label + " " + c.words.join(" ") : ""; },
+    data: () => state.data,
+    addMovimento(m) { state.data.movimenti.push(Object.assign({ id: uid(), evento: "" }, m)); changed(); renderAll(); },
+    afterCalendarChange(day) {
+      const ws = mondayOf(parseYmd(day));
+      if (ymd(ws) !== ymd(state.weekStart)) { state.weekStart = ws; state.events = []; }
+      loadWeek();
+      if (state.tempoMode === "mese") { state.month.status = "stale"; loadMonth(); }
+      loadPayments(true);
+    }
+  });
+
   // ---------- Avvio ----------
   handleRedirect();
   state.data = readLocal() || seedData();

@@ -258,3 +258,17 @@ a.btn { text-decoration: none; display: inline-block; }
 .rrow.tot { border-bottom: 0; font-weight: 700; }
 .rrow.saldo { border-top: 2px solid var(--line); border-bottom: 0; margin-top: 8px; padding-top: 10px; font-weight: 700; font-size: 16px; }
 .card p a, .notice a { color: var(--accent); font-weight: 600; }
+/* Dimmi cosa fare */
+.iconbtn.voce { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.voce-box { position: relative; }
+.voce-box textarea { width: 100%; box-sizing: border-box; font: inherit; font-size: 17px; padding: 12px 54px 12px 14px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg); color: var(--ink); resize: none; }
+.voce-box textarea:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.voce-box #voce-mic { position: absolute; right: 8px; top: 8px; }
+#voce-mic.on { background: var(--bad); color: #fff; border-color: var(--bad); }
+#voce-out { display: grid; gap: 8px; margin: 10px 0; }
+.vplan { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; padding: 10px 12px; border-radius: 12px; background: var(--ok-bg); font-size: 15px; }
+.vplan.danger { background: var(--bad-bg); }
+.vplan.no { background: var(--warn-bg); }
+.vplan .vi { width: 28px; height: 28px; border-radius: 50%; background: var(--surface); display: grid; place-items: center; font-weight: 700; }
+details summary { cursor: pointer; padding: 8px 0; }
+details .presets { margin-top: 6px; }

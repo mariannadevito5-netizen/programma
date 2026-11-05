@@ -23,6 +23,7 @@
   <header class="topbar">
     <div><p class="brand">Agenda di Mary</p><p class="sync" id="sync"></p></div>
     <div class="row" style="gap:8px">
+      <button class="iconbtn voce" id="open-voce" aria-label="Dimmi cosa fare"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg></button>
       <button class="iconbtn" id="refresh" aria-label="Aggiorna calendario e obiettivi">↻</button>
       <button class="iconbtn" id="open-settings" aria-label="Impostazioni">⚙︎</button>
     </div>
@@ -92,9 +93,28 @@
   </div>
 </div>
 
+<div class="sheet-bg" id="voce-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="voce-title-h">
+    <div class="row between">
+      <h2 id="voce-title-h">Dimmi cosa fare</h2>
+      <button class="iconbtn" data-close="voce-sheet" aria-label="Chiudi">×</button>
+    </div>
+    <p class="muted small">Tocca il microfono della tastiera e parla. Prima di salvare ti faccio vedere cosa ho capito.</p>
+    <div class="voce-box">
+      <textarea id="voce-text" rows="3" placeholder="Es. aggiungi danza giovedì dalle 18 alle 20" autocomplete="off" autocapitalize="sentences"></textarea>
+      <button class="iconbtn" id="voce-mic" aria-label="Parla"><svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true"><path fill="currentColor" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3Zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2Z"/></svg></button>
+    </div>
+    <div id="voce-out" aria-live="polite"></div>
+    <button class="btn" id="voce-ok" disabled>Conferma</button>
+    <details class="small"><summary class="muted">Cosa posso dire</summary><div class="presets" id="voce-esempi"></div></details>
+  </div>
+</div>
+
 <div class="toast" id="toast" role="status" hidden></div>
 
 <script src="config.js"></script>
+<script src="comandi.js"></script>
+<script src="voce.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
