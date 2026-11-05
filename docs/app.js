@@ -15,10 +15,11 @@
   const MESI_BREVI = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 
   const CATS = [
-    { key: "lavoro", label: "Lavoro", words: ["turno", "palestra", "lavoro", "reception", "vibe"] },
+    { key: "lavoro", label: "Lavoro (ViBe)", words: ["turno", "palestra", "lavoro", "reception", "vibe"] },
     { key: "psico", label: "Psicologa", words: ["serenis", "psicolog", "simona", "seduta", "terapia"] },
     { key: "danza", label: "Danza", words: ["danza", "prove", "nebula", "perypezye", "spettacolo", "coreograf"] },
-    { key: "studio", label: "Studio", words: [" pt ", "studio", "tesi", "inglese", "b2", "esame", "lezione", "corso", "teoria", "universit"] },
+    { key: "tesi", label: "Tesi", words: ["tesi"] },
+    { key: "studio", label: "Studio", words: [" pt ", "studio", "inglese", "b2", "esame", "lezione", "corso", "teoria", "universit"] },
     { key: "ricarica", label: "Ricarica", words: ["amici", "terme", "lettura", "leggere", "viaggio", "cena", "aperitivo", "cinema", "teatro", "compleanno", "festa", "allenamento"] },
     { key: "soldi", label: "Pagamenti", words: ["pagamento", "rata", "inps", "iva", "€", "bolletta", "affitto"] }
   ];
@@ -131,7 +132,10 @@
     data: null,
     openGoal: null,
     confirmDelete: null,
-    preset: "split"
+    preset: "split",
+    tempoMode: "settimana",
+    tempoMonth: null,
+    month: { key: null, status: "idle", events: [] }
   };
 
   // ---------- Salvataggio locale ----------
@@ -491,6 +495,76 @@
     renderAll();
   }
 
+  // ---------- Dove va il tuo tempo ----------
+  const TEMPO_ORDER = ["lavoro", "studio", "tesi", "danza", "psico", "ricarica", "altro", "viaggi", "libero"];
+  const TEMPO_LABEL = { lavoro: "Lavoro (ViBe)", studio: "Studio", tesi: "Tesi", danza: "Danza", psico: "Psicologa", ricarica: "Ricarica", altro: "Altro", viaggi: "Viaggi", libero: "Tempo libero" };
+  function awakeHours() {
+    const toMin = t => { const [h, m] = String(t).split(":").map(Number); return h * 60 + (m || 0); };
+    let a = toMin(state.data.settings.letto) - toMin(state.data.settings.sveglia);
+    if (a <= 0) a += 24 * 60;
+    return a / 60;
+  }
+  function tempo(events, from, days) {
+    const out = {}; TEMPO_ORDER.forEach(k => { out[k] = 0; });
+    const awake = awakeHours();
+    for (let i = 0; i < days; i++) {
+      const s = addDays(from, i), e = addDays(s, 1);
+      let busy = 0, work = false;
+      for (const ev of events) {
+        if (ev.allDay || ev.free || !(ev.start < e && ev.end > s)) continue;
+        const h = Math.max(0, (Math.min(ev.end, e) - Math.max(ev.start, s)) / 3600000);
+        const k = ev.cat === "soldi" ? "altro" : ev.cat;
+        out[k] = (out[k] || 0) + h; busy += h;
+        if (ev.cat === "lavoro") work = true;
+      }
+      if (work) { out.viaggi += COMMUTE_H; busy += COMMUTE_H; }
+      out.libero += Math.max(0, awake - busy);
+    }
+    return { out, awake: awake * days };
+  }
+  function monthKey() { return ym(state.tempoMonth || state.weekStart); }
+  let monthReq = 0;
+  async function loadMonth() {
+    const key = monthKey();
+    if (state.month.key === key && state.month.status === "ok") return;
+    if (!getToken()) return;
+    const my = ++monthReq;
+    state.month = { key, status: "loading", events: [] }; renderAll();
+    const [y, m] = key.split("-").map(Number);
+    const from = new Date(y, m - 1, 1), to = new Date(y, m, 1);
+    const p = new URLSearchParams({ timeMin: from.toISOString(), timeMax: to.toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "2500", timeZone: TZ });
+    try {
+      const r = await gfetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?" + p.toString());
+      const j = await r.json();
+      if (my !== monthReq) return;
+      state.month = { key, status: "ok", events: normalize(j.items) };
+    } catch (e) { if (my !== monthReq) return; state.month = { key, status: "error", events: [] }; }
+    renderAll();
+  }
+  function tempoCard() {
+    const mese = state.tempoMode === "mese";
+    let html = '<div class="card"><div class="row between wrapx"><h3>Dove va il tuo tempo</h3><div class="seg"><button data-tempo="settimana" aria-pressed="' + !mese + '">Settimana</button><button data-tempo="mese" aria-pressed="' + mese + '">Mese</button></div></div>';
+    let data = null, label = "";
+    if (!mese) {
+      if (state.cal !== "ok") return html + '<p class="muted small">Le ore compaiono quando il calendario è collegato.</p></div>';
+      data = tempo(state.events, state.weekStart, 7); label = "questa settimana";
+    } else {
+      const key = monthKey(); const [y, m] = key.split("-").map(Number);
+      html += '<div class="row between"><button class="iconbtn" data-tmonth="-1" aria-label="Mese prima">‹</button><strong>' + MESI[m - 1] + " " + y + '</strong><button class="iconbtn" data-tmonth="1" aria-label="Mese dopo">›</button></div>';
+      if (state.month.key !== key || state.month.status === "loading") return html + '<p class="muted small">Conto le ore del mese…</p></div>';
+      if (state.month.status !== "ok") return html + '<p class="muted small">Non riesco a leggere il mese. Tocca ↻ in alto per riprovare.</p></div>';
+      data = tempo(state.month.events, new Date(y, m - 1, 1), new Date(y, m, 0).getDate()); label = "in " + MESI[m - 1];
+    }
+    const { out, awake } = data;
+    const keys = TEMPO_ORDER.filter(k => out[k] > 0.01);
+    const maxH = Math.max(...keys.map(k => out[k]), 1);
+    html += '<div class="stack" aria-hidden="true">' + keys.map(k => '<i style="width:' + (out[k] / awake * 100).toFixed(2) + '%;background:var(--c-' + k + ')"></i>').join("") + "</div>";
+    html += '<p class="muted small">Su ' + hoursTxt(awake) + " da sveglia " + label + ", calcolate dal calendario e dall'orario del sonno.</p>";
+    html += keys.map(k => '<div class="trow"><span class="sq" style="background:var(--c-' + k + ')"></span><span class="lab">' + TEMPO_LABEL[k] + '<span class="mini"><i style="width:' + (out[k] / maxH * 100).toFixed(1) + '%;background:var(--c-' + k + ')"></i></span></span><span class="h">' + hoursTxt(out[k]) + " <small>" + Math.round(out[k] / awake * 100) + "%</small></span></div>").join("");
+    if (out.libero / awake < 0.2) html += '<p class="notice warn">Il tempo libero è sotto il 20%. Proteggi almeno una sera senza impegni.</p>';
+    return html + "</div>";
+  }
+
   // ---------- Vista Settimana ----------
   function renderSettimana() {
     const el = document.getElementById("view-settimana");
@@ -514,6 +588,7 @@
     if (ok) html += '<p class="muted small">' + hoursTxt(total) + " impegnate in tutto, viaggi per la palestra compresi. " + (red ? red + (red === 1 ? " giorno al limite." : " giorni al limite.") : yellow ? yellow + (yellow === 1 ? " giorno pieno." : " giorni pieni.") : "Settimana leggera.") + "</p>";
     html += "</div>";
 
+    html += tempoCard();
     if (ok && red >= 2) html += '<div class="notice bad"><strong>Questa settimana rischi il sovraccarico.</strong><span>Hai ' + red + " giorni al limite. Sposta o togli almeno un impegno non fisso prima di ammalarti.</span></div>";
     if (ok && !recharge) html += '<div class="notice warn"><strong>Manca una cosa che ti ricarica.</strong><span>Metti in calendario un momento tra amici, danza, lettura o terme. La domenica è libera.</span></div>';
 
@@ -709,6 +784,8 @@
     else if ("reload" in ds) loadWeek();
     else if (ds.day) moveDay(Number(ds.day));
     else if (ds.week) moveWeek(Number(ds.week));
+    else if (ds.tempo) { state.tempoMode = ds.tempo; if (ds.tempo === "mese") { state.tempoMonth = state.tempoMonth || new Date(state.weekStart); loadMonth(); } renderAll(); }
+    else if (ds.tmonth) { const b = state.tempoMonth || new Date(state.weekStart); state.tempoMonth = new Date(b.getFullYear(), b.getMonth() + Number(ds.tmonth), 1); loadMonth(); renderAll(); }
     else if (ds.jump) { const el = document.getElementById("d-" + ds.jump); if (el) el.scrollIntoView({ behavior: "smooth", block: "start" }); }
     else if (ds.add) openAdd(parseYmd(ds.add));
     else if (ds.preset) { state.preset = ds.preset; renderPresets(); }
@@ -752,7 +829,8 @@
   document.getElementById("refresh").onclick = async () => {
     if (!getToken()) { if (CFG.googleClientId) login(false); return; }
     const b = document.getElementById("refresh"); b.disabled = true;
-    await Promise.all([loadWeek(), syncSheet()]);
+    if (state.tempoMode === "mese") state.month.status = "stale";
+    await Promise.all([loadWeek(), syncSheet(), state.tempoMode === "mese" ? loadMonth() : null]);
     b.disabled = false;
     toast(state.cal === "ok" ? "Calendario e obiettivi aggiornati" : "Non sono riuscita ad aggiornare. Riprova tra poco.");
   };

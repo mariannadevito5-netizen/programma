@@ -20,6 +20,9 @@
   --c-ricarica: #D36A1F;
   --c-soldi: #7A7488;
   --c-altro: #8A8597;
+  --c-tesi: #23808C;
+  --c-viaggi: #B4AEC0;
+  --c-libero: #2F8A5B;
   --f-display: "Bricolage Grotesque", "Avenir Next", system-ui, sans-serif;
   --f-body: "Figtree", system-ui, -apple-system, "Segoe UI", sans-serif;
   color-scheme: light;
@@ -30,7 +33,7 @@
     --accent: #9C93FF; --accent-ink: #15131B;
     --ok: #6FCB98; --warn: #E8B45E; --bad: #F08A82;
     --ok-bg: #1D3328; --warn-bg: #3A2E18; --bad-bg: #3D2120;
-    --c-lavoro: #7FB0D4; --c-studio: #9C93FF; --c-psico: #84C3A4; --c-danza: #EB7DB8; --c-ricarica: #F2A061; --c-soldi: #A9A3B8; --c-altro: #A9A3B8;
+    --c-lavoro: #7FB0D4; --c-studio: #9C93FF; --c-psico: #84C3A4; --c-danza: #EB7DB8; --c-ricarica: #F2A061; --c-soldi: #A9A3B8; --c-altro: #A9A3B8; --c-tesi: #6FD0DA; --c-viaggi: #5E5870; --c-libero: #6FCB98;
     color-scheme: dark;
   }
 }
@@ -40,7 +43,7 @@
   --accent: #3FE0C5; --accent-ink: #0E2533;
   --ok: #5FE0A0; --warn: #FFC857; --bad: #FF8577;
   --ok-bg: #134B44; --warn-bg: #4A4126; --bad-bg: #4D2A30;
-  --c-lavoro: #6EC1FF; --c-studio: #3FE0C5; --c-psico: #B8F28C; --c-danza: #FF8FC8; --c-ricarica: #FFB067; --c-soldi: #A5BCC9; --c-altro: #8FA9B8;
+  --c-lavoro: #6EC1FF; --c-studio: #3FE0C5; --c-psico: #B8F28C; --c-danza: #FF8FC8; --c-ricarica: #FFB067; --c-soldi: #A5BCC9; --c-altro: #8FA9B8; --c-tesi: #FFD166; --c-viaggi: #4F7890; --c-libero: #5FE0A0;
   color-scheme: dark;
 }
 :root[data-tema="studio"] {
@@ -48,7 +51,7 @@
   --accent: #D9466F; --accent-ink: #FFFFFF;
   --ok: #2E8B62; --warn: #B7741A; --bad: #C23B3B;
   --ok-bg: #E3F3EA; --warn-bg: #FBEEDA; --bad-bg: #FBE4E2;
-  --c-lavoro: #3E7CB1; --c-studio: #7A4FD0; --c-psico: #3F9A7A; --c-danza: #D9466F; --c-ricarica: #E07A2E; --c-soldi: #8C7A80; --c-altro: #9A8A90;
+  --c-lavoro: #3E7CB1; --c-studio: #7A4FD0; --c-psico: #3F9A7A; --c-danza: #D9466F; --c-ricarica: #E07A2E; --c-soldi: #8C7A80; --c-altro: #9A8A90; --c-tesi: #23808C; --c-viaggi: #CDBFC2; --c-libero: #2E8B62;
   --f-display: "Fraunces", Georgia, "Times New Roman", serif;
   color-scheme: light;
 }
@@ -217,3 +220,17 @@ input, select { font: inherit; color: var(--ink); }
 .h2 { font-family: var(--f-display); font-size: 19px; font-weight: 700; line-height: 1.2; color: var(--ink); }
 a.btn { text-decoration: none; display: inline-block; }
 :root[data-tema="notte"] .day.today { border-color: var(--accent); }
+
+/* Dove va il tuo tempo */
+.seg { display: inline-flex; background: var(--bg); border-radius: 999px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; padding: 5px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; color: var(--muted); }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+.stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; background: var(--line); }
+.stack i { display: block; height: 100%; }
+.trow { display: grid; grid-template-columns: 10px 1fr auto; gap: 10px; align-items: center; font-size: 14px; }
+.trow .sq { width: 10px; height: 10px; border-radius: 3px; }
+.trow .lab { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.trow .mini { height: 5px; border-radius: 5px; background: var(--line); overflow: hidden; }
+.trow .mini > i { display: block; height: 100%; }
+.trow .h { font-weight: 600; white-space: nowrap; min-width: 92px; text-align: right; }
+.trow .h small { font-weight: 400; color: var(--muted); }
