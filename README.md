@@ -1,4 +1,4 @@
-# Agenda di Mary
+# Xena Oogway
 
 App web personale, pensata per il telefono, per organizzare settimana, giornata e obiettivi.
 
