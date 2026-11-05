@@ -278,3 +278,6 @@ details .presets { margin-top: 6px; }
 .card { padding: 18px; gap: 12px; border-radius: 18px; box-shadow: 0 1px 3px rgba(31, 27, 41, 0.05); }
 .tile { padding: 16px; border-radius: 18px; }
 .check + .check { margin-top: 2px; }
+.brandbox { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.logo { width: 52px; height: 52px; border-radius: 16px; flex: none; box-shadow: 0 2px 8px rgba(20, 15, 51, 0.25); }
+.brand { font-size: 18px; }
