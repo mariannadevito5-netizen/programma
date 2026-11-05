@@ -1,0 +1,60 @@
+# Guida: come mettere online l'Agenda di Mary
+
+Sono tre passi da fare una volta sola, in tutto circa 20 minuti. Fai i primi due dal computer.
+
+## Passo 1. Pubblicare l'app (GitHub Pages, gratis)
+
+1. Apri https://github.com/mariannadevito5-netizen/programma
+2. Vai su **Settings**, scorri fino in fondo a **Danger Zone**, poi **Change visibility** e **Make public**.
+   Nel repository c'è solo il codice: obiettivi, priorità ed eventi restano nel tuo Google Drive e nel tuo Google Calendar.
+3. Sempre in **Settings**, apri **Pages** nel menu a sinistra.
+   - Source: **Deploy from a branch**
+   - Branch: il ramo dell'app (oggi `claude/project-thread-0x3y8g`) e la cartella **/docs**
+   - Premi **Save**
+4. Dopo uno o due minuti l'app è online qui: https://mariannadevito5-netizen.github.io/programma/
+
+Senza il passo 2 l'app funziona già: obiettivi e priorità si salvano sul dispositivo, ma non vedi il calendario.
+
+## Passo 2. Collegare Google Calendar e Google Drive
+
+Google chiede a ogni app che legge il calendario di avere un suo "accesso". Lo crei tu, così resta solo tuo.
+
+1. Apri https://console.cloud.google.com ed entra con il tuo account Google (quello del calendario).
+2. In alto, accanto al logo, apri il menu dei progetti e scegli **Nuovo progetto**. Nome: `Agenda Mary`. Crea e selezionalo.
+3. Nel menu a sinistra: **API e servizi**, poi **Libreria**. Cerca e attiva una alla volta:
+   - **Google Calendar API**
+   - **Google Drive API**
+4. Nel menu: **Google Auth Platform** (in alcune versioni si chiama **Schermata consenso OAuth**). Premi **Inizia** e compila:
+   - Nome app: `Agenda di Mary`
+   - Email di assistenza: la tua
+   - Pubblico: **Esterno**
+   - Dati di contatto: la tua email
+5. Apri **Pubblico** (o **Utenti di test**) e aggiungi la tua email Gmail come utente di test.
+6. Apri **Accesso ai dati** (o **Ambiti**), premi **Aggiungi o rimuovi ambiti** e incolla questi due, uno per riga:
+   ```
+   https://www.googleapis.com/auth/calendar.events
+   https://www.googleapis.com/auth/drive.appdata
+   ```
+   Salva.
+7. Apri **Client**, poi **Crea client**:
+   - Tipo di applicazione: **Applicazione web**
+   - Nome: `Agenda telefono`
+   - Origini JavaScript autorizzate: `https://mariannadevito5-netizen.github.io`
+   - URI di reindirizzamento autorizzati: `https://mariannadevito5-netizen.github.io/programma/`
+   - Premi **Crea**
+8. Copia l'**ID client** (finisce con `.apps.googleusercontent.com`) e mandamelo in chat. Non è una password, si può condividere. Lo inserisco io nell'app.
+
+Al primo accesso Google mostra l'avviso "Google non ha verificato questa app". È normale per un'app personale: tocca **Avanzate** e poi **Vai ad Agenda di Mary**.
+
+## Passo 3. Installare l'app sul telefono
+
+- **iPhone:** apri il link in **Safari**, tocca il pulsante Condividi (il quadrato con la freccia) e scegli **Aggiungi alla schermata Home**.
+- **Android:** apri il link in **Chrome**, tocca il menu ⋮ e scegli **Installa app** (o **Aggiungi a schermata Home**).
+
+Poi apri l'app dall'icona e tocca **Accedi con Google**.
+
+## Cose da sapere
+
+- L'accesso a Google dura circa un'ora. Quando riapri l'app dopo, ti fa rientrare in automatico o con un tocco.
+- Obiettivi, step, priorità e impostazioni sono salvati in un file nascosto del tuo Google Drive (pochi KB). In alto vedi "Salvato su Drive" quando è tutto a posto.
+- Gli eventi restano su Google Calendar: quello che aggiungi dall'app lo vedi anche lì, e viceversa.

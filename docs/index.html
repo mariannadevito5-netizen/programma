@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Agenda di Mary</title>
+<meta name="description" content="Settimana, giornata e obiettivi di Mary, collegati a Google Calendar.">
+<meta name="theme-color" content="#4A3FCF">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Agenda">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&display=swap">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="topbar">
+    <div><p class="brand">Agenda di Mary</p><p class="sync" id="sync"></p></div>
+    <button class="iconbtn" id="open-settings" aria-label="Impostazioni">⚙︎</button>
+  </header>
+  <section id="view-oggi" hidden></section>
+  <section id="view-settimana" hidden></section>
+  <section id="view-obiettivi" hidden></section>
+</div>
+
+<nav class="tabs" aria-label="Sezioni">
+  <div class="tabs-in">
+    <button class="tab" data-view="oggi" id="tab-oggi">Oggi</button>
+    <button class="tab" data-view="settimana" id="tab-settimana">Settimana</button>
+    <button class="tab" data-view="obiettivi" id="tab-obiettivi">Obiettivi</button>
+    <button class="fab" id="open-add" aria-label="Aggiungi al calendario">+</button>
+  </div>
+</nav>
+
+<div class="sheet-bg" id="add-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="add-title-h">
+    <div class="row between">
+      <h2 id="add-title-h">Aggiungi al calendario</h2>
+      <button class="iconbtn" data-close="add-sheet" aria-label="Chiudi">×</button>
+    </div>
+    <div class="field"><label for="add-date">Giorno</label><input type="date" id="add-date"></div>
+    <div class="field"><label>Cosa</label><div class="presets" id="presets"></div></div>
+    <div id="custom-fields" class="field" hidden>
+      <div class="field"><label for="add-title">Titolo</label><input type="text" id="add-title" maxlength="120" placeholder="Es. Psicologa, Danza, Studio tesi"></div>
+      <div class="two">
+        <div class="field"><label for="add-start">Inizio</label><input type="time" id="add-start" value="17:00"></div>
+        <div class="field"><label for="add-end">Fine</label><input type="time" id="add-end" value="18:00"></div>
+      </div>
+    </div>
+    <p class="muted" id="add-summary"></p>
+    <p id="add-error" class="notice bad" hidden></p>
+    <button class="btn" id="add-confirm">Aggiungi</button>
+  </div>
+</div>
+
+<div class="sheet-bg" id="set-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="set-title-h">
+    <div class="row between">
+      <h2 id="set-title-h">Impostazioni</h2>
+      <button class="iconbtn" data-close="set-sheet" aria-label="Chiudi">×</button>
+    </div>
+    <h3>Sonno</h3>
+    <div class="two">
+      <div class="field"><label for="set-letto">A letto</label><input type="time" id="set-letto"></div>
+      <div class="field"><label for="set-sveglia">Sveglia</label><input type="time" id="set-sveglia"></div>
+    </div>
+    <h3>Turno del sabato mattina</h3>
+    <div class="two">
+      <div class="field"><label for="set-sab-a">Inizio</label><input type="time" id="set-sab-a"></div>
+      <div class="field"><label for="set-sab-b">Fine</label><input type="time" id="set-sab-b"></div>
+    </div>
+    <button class="btn" id="set-save">Salva</button>
+    <h3>Account Google</h3>
+    <div id="set-account"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" hidden></div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
