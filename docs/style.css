@@ -243,3 +243,18 @@ a.btn { text-decoration: none; display: inline-block; }
 .ok-t { color: var(--ok); } .warn-t { color: var(--warn); } .bad-t { color: var(--bad); }
 .field select { width: 100%; }
 @media (max-width: 380px) { .tab { font-size: 13px; padding-left: 2px; padding-right: 2px; } }
+.toast-btn { margin-left: 12px; border: 0; background: none; color: var(--accent); font-weight: 700; font-size: 14px; padding: 0; }
+:root[data-tema="notte"] .toast-btn { color: var(--accent-ink); }
+.vs { display: grid; gap: 8px; margin-bottom: 14px; }
+.vbar { height: 10px; border-radius: 10px; background: var(--line); overflow: hidden; margin-top: 3px; }
+.vbar > i { display: block; height: 100%; border-radius: 10px; }
+.rgrid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+.rcol { min-width: 0; }
+.rcol .eyebrow { margin: 0 0 6px; }
+.rrow { display: flex; justify-content: space-between; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+.rrow > span:last-child { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; }
+.rrow.zero { color: var(--muted); }
+.rrow.zero > span:last-child { font-weight: 400; }
+.rrow.tot { border-bottom: 0; font-weight: 700; }
+.rrow.saldo { border-top: 2px solid var(--line); border-bottom: 0; margin-top: 8px; padding-top: 10px; font-weight: 700; font-size: 16px; }
+.card p a, .notice a { color: var(--accent); font-weight: 600; }

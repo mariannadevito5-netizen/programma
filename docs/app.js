@@ -141,7 +141,8 @@
     tempoMonth: null,
     month: { key: null, status: "idle", events: [] },
     pay: { key: null, status: "idle", items: [] },
-    soldiMonth: null
+    soldiMonth: null,
+    sheetReady: false
   };
 
   // ---------- Salvataggio locale ----------
@@ -210,8 +211,8 @@
   const H_GOALS = ["ID obiettivo", "Obiettivo", "Nome breve", "Colore", "Scadenza", "Data indicativa", "ID step", "Step", "Mese", "Fatto"];
   const H_DAYS = ["Data", "Priorità 1", "Priorità 2", "Priorità 3", "Fatta 1", "Fatta 2", "Fatta 3"];
   const H_SET = ["Impostazione", "Valore"];
-  const H_MOV = ["ID", "Data", "Cosa", "Categoria", "Importo", "Fatto", "ID evento"];
-  const TABS = ["Obiettivi", "Priorità", "Impostazioni", "Movimenti"];
+  const H_MOV = ["Data", "Cosa", "Categoria", "Importo", "Fatto", "ID", "ID evento"];
+  const TABS = ["Obiettivi", "Priorità", "Impostazioni", "Movimenti", "Resoconto"];
   const RANGES = ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50", "Movimenti!A1:G3000"];
   let tabsOk = false;
   async function ensureTabs() {
@@ -262,8 +263,8 @@
     }
     const days = [H_DAYS].concat(Object.keys(d.giorni).sort().map(k => { const g = d.giorni[k]; return [k].concat(g.priorita.slice(0, 3), g.fatte.slice(0, 3).map(x => x ? "sì" : "")); }));
     const set = [H_SET].concat(Object.keys(d.settings).map(k => [k, d.settings[k]]));
-    const movs = [H_MOV].concat((d.movimenti || []).slice().sort((a, b) => a.data.localeCompare(b.data)).map(m => [m.id, m.data, m.cosa, m.categoria, m.importo, m.fatto ? "sì" : "", m.evento || ""]));
-    return { goals, days, set, movs };
+    const movs = [H_MOV].concat((d.movimenti || []).slice().sort((a, b) => a.data.localeCompare(b.data)).map(m => [m.data, m.cosa, m.categoria, m.importo, m.fatto ? "Sì" : "No", m.id, m.evento || ""]));
+    return { goals, days, set, movs, res: resocontoRows(d.movimenti || []) };
   }
   function fromRows(goalRows, dayRows, setRows, movRows, movTab) {
     const d = { version: 1, updatedAt: Date.now(), settings: Object.assign({}, seedData().settings), giorni: {}, obiettivi: [] };
@@ -287,11 +288,15 @@
     for (const r of (setRows || []).slice(1)) { const k = String(r[0] || "").trim(); if (k in d.settings && r[1]) d.settings[k] = String(r[1]).trim(); }
     if (movTab) {
       d.movimenti = [];
-      for (const r of (movRows || []).slice(1)) {
-        const cosa = String(r[2] || "").trim(); const data = serialToYmd(r[1]);
+      const hd = (movRows[0] || []).map(x => String(x || "").trim().toLowerCase());
+      const col = (name, def) => { const i = hd.indexOf(name); return i >= 0 ? i : def; };
+      const cD = col("data", 0), cC = col("cosa", 1), cK = col("categoria", 2), cI = col("importo", 3), cF = col("fatto", 4), cId = col("id", 5), cE = col("id evento", 6);
+      for (const r of movRows.slice(1)) {
+        const cosa = String(r[cC] || "").trim(); const data = serialToYmd(r[cD]);
         if (!cosa || !/^\d{4}-\d{2}-\d{2}$/.test(data)) continue;
-        const imp = typeof r[4] === "number" ? r[4] : Number(String(r[4] || "0").replace(/\./g, "").replace(",", ".")) || 0;
-        d.movimenti.push({ id: String(r[0] || "").trim() || uid(), data, cosa, categoria: CATS_SOLDI.includes(String(r[3]).trim()) ? String(r[3]).trim() : "Extra", importo: imp, fatto: yes(r[5]), evento: String(r[6] || "").trim() });
+        const imp = typeof r[cI] === "number" ? r[cI] : Number(String(r[cI] || "0").replace(/[€\s]/g, "").replace(/\./g, "").replace(",", ".")) || 0;
+        const cat = String(r[cK] || "").trim();
+        d.movimenti.push({ id: String(r[cId] || "").trim() || uid(), data, cosa, categoria: CATS_SOLDI.includes(cat) ? cat : "Extra", importo: imp, fatto: yes(r[cF]), evento: String(r[cE] || "").trim() });
       }
     }
     return d;
@@ -310,21 +315,22 @@
     if (!sheetId && !(await sheetFind())) await sheetCreate();
     await ensureTabs();
     const rows = toRows();
-    await gfetch(SAPI + "/" + sheetId + "/values:batchClear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ranges: RANGES }) });
+    await gfetch(SAPI + "/" + sheetId + "/values:batchClear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ranges: RANGES.concat(["Resoconto!A1:N80"]) }) });
     await gfetch(SAPI + "/" + sheetId + "/values:batchUpdate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valueInputOption: "RAW", data: [
-      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }, { range: "Movimenti!A1", values: rows.movs }
+      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }, { range: "Movimenti!A1", values: rows.movs }, { range: "Resoconto!A1", values: rows.res }
     ] }) });
     setDirty(false); lastRead = Date.now();
   }
   async function syncSheet() {
     if (!getToken()) return;
     try {
-      if (isDirty()) { await sheetWrite(); state.sync = "saved"; renderTop(); return; }
-      if (!(await sheetFind())) { await sheetWrite(); state.sync = "saved"; renderAll(); return; }
+      if (isDirty()) { await sheetWrite(); state.sync = "saved"; state.sheetReady = true; if (reconcilePay()) changed(); renderTop(); return; }
+      if (!(await sheetFind())) { await sheetWrite(); state.sync = "saved"; state.sheetReady = true; if (reconcilePay()) changed(); renderAll(); return; }
       const res = await sheetRead();
       if (res.empty) await sheetWrite();
       else { state.data = res.data; writeLocal(); if (ensureMovimenti()) changed(); }
-      state.sync = "saved";
+      state.sync = "saved"; state.sheetReady = true;
+      if (reconcilePay()) changed();
       renderAll();
     } catch (e) {
       state.sync = e instanceof AuthError ? "local" : "error";
@@ -560,7 +566,7 @@
   let payReq = 0;
   async function loadPayments(force) {
     if (!getToken()) return;
-    const until = new Date(Math.max(endOfMonth(soldiKey()), addDays(startOfDay(new Date()), 3)));
+    const t0 = new Date(); const until = new Date(Math.max(endOfMonth(soldiKey()), new Date(t0.getFullYear(), t0.getMonth() + 9, 0)));
     const key = ymd(until);
     if (!force && state.pay.key === key && (state.pay.status === "ok" || state.pay.status === "loading")) return;
     const my = ++payReq;
@@ -572,31 +578,48 @@
       if (my !== payReq) return;
       const items = normalize(j.items).filter(ev => ev.cat === "soldi").map(ev => { const c = guessCat(ev.title); return { key: "cal:" + ev.id, evento: ev.id, data: ymd(ev.start), cosa: cleanTitle(ev.title), categoria: c, importo: parseAmount(ev.title), entrata: ENTRATE.has(c), cal: true }; });
       state.pay = { key, status: "ok", items };
+      if (reconcilePay()) changed();
     } catch (e) { if (my !== payReq) return; state.pay = { key, status: "error", items: [] }; }
     renderAll();
   }
+  // I pagamenti del calendario diventano righe della scheda Movimenti, così il Foglio ha tutto.
+  function reconcilePay() {
+    if (state.pay.status !== "ok" || !state.sheetReady || !Array.isArray(state.data.movimenti)) return false;
+    const until = state.pay.key; let ch = false;
+    const byEv = new Map(state.data.movimenti.filter(m => m.evento).map(m => [m.evento, m]));
+    for (const it of state.pay.items) {
+      const m = byEv.get(it.evento);
+      if (!m) { state.data.movimenti.push({ id: uid(), data: it.data, cosa: it.cosa, categoria: it.categoria, importo: it.importo, fatto: false, evento: it.evento }); ch = true; }
+      else if (!m.fatto && (m.data !== it.data || m.importo !== it.importo || m.cosa !== it.cosa)) { m.data = it.data; m.importo = it.importo; m.cosa = it.cosa; ch = true; }
+    }
+    const ids = new Set(state.pay.items.map(i => i.evento));
+    const before = state.data.movimenti.length;
+    state.data.movimenti = state.data.movimenti.filter(m => !(m.evento && !m.fatto && m.data >= TRACK_START && m.data <= until && !ids.has(m.evento)));
+    return ch || state.data.movimenti.length !== before;
+  }
   function allItems() {
-    const done = new Set(state.data.movimenti.filter(m => m.evento && m.fatto).map(m => m.evento));
-    const cal = state.pay.items.filter(i => !done.has(i.evento)).map(i => Object.assign({}, i, { fatto: false }));
+    const have = new Set(state.data.movimenti.filter(m => m.evento).map(m => m.evento));
+    const cal = state.pay.items.filter(i => !have.has(i.evento)).map(i => Object.assign({}, i, { fatto: false }));
     const man = state.data.movimenti.map(m => ({ key: "man:" + m.id, mov: m, data: m.data, cosa: m.cosa, categoria: m.categoria, importo: m.importo, entrata: ENTRATE.has(m.categoria), fatto: m.fatto, cal: !!m.evento }));
     return cal.concat(man).sort((a, b) => a.data.localeCompare(b.data));
   }
   function payItem(key) {
-    const [kind, id] = [key.slice(0, 3), key.slice(4)];
+    const kind = key.slice(0, 3), id = key.slice(4);
+    let m;
     if (kind === "cal") {
       const it = state.pay.items.find(i => i.evento === id); if (!it) return;
-      state.data.movimenti.push({ id: uid(), data: it.data, cosa: it.cosa, categoria: it.categoria, importo: it.importo, fatto: true, evento: it.evento });
-      toast((it.entrata ? "Incassato: " : "Pagato: ") + it.cosa + (it.importo ? " " + euro(it.importo) : ""));
+      m = { id: uid(), data: it.data, cosa: it.cosa, categoria: it.categoria, importo: it.importo, fatto: true, evento: it.evento };
+      state.data.movimenti.push(m);
     } else {
-      const m = state.data.movimenti.find(x => x.id === id); if (!m) return;
-      m.fatto = true; toast((ENTRATE.has(m.categoria) ? "Incassato: " : "Pagato: ") + m.cosa);
+      m = state.data.movimenti.find(x => x.id === id); if (!m) return;
+      m.fatto = true;
     }
+    toast((ENTRATE.has(m.categoria) ? "Incassato: " : "Pagato: ") + m.cosa + (m.importo ? " " + euro(m.importo) : ""), () => unpayItem(m.id));
     changed(); renderAll();
   }
   function unpayItem(id) {
     const m = state.data.movimenti.find(x => x.id === id); if (!m) return;
-    if (m.evento) state.data.movimenti = state.data.movimenti.filter(x => x !== m); else m.fatto = false;
-    changed(); renderAll();
+    m.fatto = false; changed(); renderAll();
   }
   function dueLabel(dateStr) {
     const n = daysBetween(new Date(), parseYmd(dateStr));
@@ -619,32 +642,70 @@
     const tot = due.filter(i => !i.entrata).reduce((a, i) => a + i.importo, 0);
     return '<div class="card"><div class="row between"><h3>Pagamenti</h3>' + (tot ? '<span class="chip warn">' + euro(tot) + "</span>" : "") + "</div>" + due.map(i => payRow(i, true)).join("") + '<p class="muted small">Spunta quando hai pagato: il resoconto in Cash si aggiorna da solo.</p></div>';
   }
+  function resocontoMese(items, key) {
+    const r = { cat: {}, entrate: 0, uscite: 0, daPagare: 0, daIncassare: 0 };
+    CATS_SOLDI.forEach(c => { r.cat[c] = 0; });
+    for (const i of items) {
+      if (i.data.slice(0, 7) !== key) continue;
+      const v = Number(i.importo) || 0, ent = ENTRATE.has(i.categoria);
+      if (i.fatto) { r.cat[i.categoria] = (r.cat[i.categoria] || 0) + v; if (ent) r.entrate += v; else r.uscite += v; }
+      else if (ent) r.daIncassare += v; else r.daPagare += v;
+    }
+    return r;
+  }
+  function resocontoRows(movs) {
+    const items = movs.map(m => ({ data: m.data, categoria: m.categoria, importo: m.importo, fatto: m.fatto }));
+    const last = items.reduce((mx, i) => i.data.slice(0, 7) > mx ? i.data.slice(0, 7) : mx, "2027-07");
+    const ent = CATS_SOLDI.filter(c => ENTRATE.has(c)), usc = CATS_SOLDI.filter(c => !ENTRATE.has(c));
+    const head = ["Mese"].concat(ent, ["Entrate totali"], usc, ["Uscite totali", "Saldo del mese", "Ancora da pagare", "Ancora da incassare"]);
+    const rows = [["Resoconto entrate e uscite"], ["Lo aggiorna l'app da sola ogni volta che salva: qui non scrivere niente. Le spese si segnano nell'app (scheda Cash) o nella scheda Movimenti. Le colonne per categoria contano solo quello che è già pagato o incassato."], [], head];
+    const tot = head.slice(1).map(() => 0);
+    let d = parseYmd(TRACK_START);
+    while (ym(d) <= last) {
+      const k = ym(d), r = resocontoMese(items, k);
+      const vals = ent.map(c => r.cat[c]).concat([r.entrate], usc.map(c => r.cat[c]), [r.uscite, r.entrate - r.uscite, r.daPagare, r.daIncassare]);
+      vals.forEach((v, i) => { tot[i] += v; });
+      rows.push([MESI[d.getMonth()].replace(/^./, x => x.toUpperCase()) + " " + d.getFullYear()].concat(vals));
+      d = new Date(d.getFullYear(), d.getMonth() + 1, 1);
+    }
+    rows.push(["Totale"].concat(tot));
+    return rows;
+  }
   function renderSoldi() {
     const el = document.getElementById("view-soldi");
     const key = soldiKey(); const [y, m] = key.split("-").map(Number);
     const items = allItems();
-    const inMonth = items.filter(i => i.data.slice(0, 7) === key);
     const oggi = ymd(new Date());
+    const inMonth = items.filter(i => i.data.slice(0, 7) === key);
     const prev = items.filter(i => i.data.slice(0, 7) < key && i.data < oggi && i.data >= TRACK_START && !i.fatto);
     const sum = arr => arr.reduce((a, i) => a + (Number(i.importo) || 0), 0);
-    const entrate = sum(inMonth.filter(i => i.fatto && i.entrata)), uscite = sum(inMonth.filter(i => i.fatto && !i.entrata));
-    const daPagare = sum(inMonth.filter(i => !i.fatto && !i.entrata)), daIncassare = sum(inMonth.filter(i => !i.fatto && i.entrata));
+    const r = resocontoMese(items, key);
+    const entrate = r.entrate, uscite = r.uscite;
     const arretrati = sum(prev.filter(i => !i.entrata));
     let html = '<div class="row between"><button class="iconbtn" data-smonth="-1" aria-label="Mese prima">‹</button><div class="center"><p class="eyebrow">Cash</p><h1>' + MESI[m - 1] + " " + y + '</h1></div><button class="iconbtn" data-smonth="1" aria-label="Mese dopo">›</button></div>';
     if (getToken() && state.pay.status === "error") html += '<div class="notice warn"><strong>Non riesco a leggere i pagamenti dal calendario.</strong><span>Tocca ↻ in alto per riprovare.</span></div>';
     html += '<div class="tiles"><div class="tile"><span class="eyebrow">Entrate incassate</span><span class="num ok-t">' + euro(entrate) + '</span></div><div class="tile"><span class="eyebrow">Uscite pagate</span><span class="num">' + euro(uscite) + '</span></div>' +
-      '<div class="tile"><span class="eyebrow">Saldo del mese</span><span class="num ' + (entrate - uscite < 0 ? "bad-t" : "ok-t") + '">' + euro(entrate - uscite) + '</span></div><div class="tile"><span class="eyebrow">Da pagare</span><span class="num ' + (daPagare + arretrati ? "warn-t" : "") + '">' + euro(daPagare + arretrati) + "</span>" + (arretrati ? '<span class="muted small">di cui arretrati ' + euro(arretrati) + "</span>" : "") + "</div></div>";
-    if (daIncassare) html += '<p class="muted small">Da incassare questo mese: ' + euro(daIncassare) + ".</p>";
+      '<div class="tile"><span class="eyebrow">Saldo del mese</span><span class="num ' + (entrate - uscite < 0 ? "bad-t" : "ok-t") + '">' + euro(entrate - uscite) + '</span></div><div class="tile"><span class="eyebrow">Da pagare</span><span class="num ' + (r.daPagare + arretrati ? "warn-t" : "") + '">' + euro(r.daPagare + arretrati) + "</span>" + (arretrati ? '<span class="muted small">di cui arretrati ' + euro(arretrati) + "</span>" : "") + "</div></div>";
     const pend = prev.concat(inMonth.filter(i => !i.fatto));
-    html += '<div class="card"><h3>Da pagare e da incassare</h3>' + (pend.length ? pend.map(i => payRow(i, true)).join("") : '<p class="muted small">Niente in sospeso questo mese.</p>') + "</div>";
-    const cats = CATS_SOLDI.filter(c => !ENTRATE.has(c)).map(c => [c, sum(inMonth.filter(i => i.fatto && i.categoria === c))]).filter(x => x[1] > 0);
-    if (cats.length) { const mx = Math.max(...cats.map(x => x[1])); html += '<div class="card"><h3>Uscite pagate per categoria</h3>' + cats.map(([c, v]) => '<div class="trow"><span class="sq" style="background:var(--accent)"></span><span class="lab">' + c + '<span class="mini"><i style="width:' + (v / mx * 100).toFixed(1) + '%;background:var(--accent)"></i></span></span><span class="h">' + euro(v) + "</span></div>").join("") + "</div>"; }
-    const done = inMonth.filter(i => i.fatto);
-    html += '<div class="card"><h3>Fatti questo mese</h3>' + (done.length ? done.map(i => '<div class="check done"><input type="checkbox" checked data-unpay="' + esc(i.mov.id) + '" aria-label="Segna come non fatto"><span class="txt">' + esc(i.cosa) + " <strong>" + euro(i.importo) + '</strong> <span class="muted small">· ' + esc(fmtShortDay(i.data)) + " · " + esc(i.categoria) + '</span></span><span class="meta">' + (i.cal ? "" : '<button class="del" data-delmov="' + esc(i.mov.id) + '" aria-label="Elimina">×</button>') + "</span></div>").join("") : '<p class="muted small">Ancora niente. Segna qui sotto le spese che fai.</p>') + "</div>";
+    const pagare = pend.filter(i => !i.entrata), incassare = pend.filter(i => i.entrata);
+    html += '<div class="card"><div class="row between"><h3>Da pagare</h3>' + (pagare.length ? '<span class="chip warn">' + euro(sum(pagare)) + "</span>" : "") + "</div>" +
+      (pagare.length ? pagare.map(i => payRow(i, true)).join("") : '<p class="muted small">Niente da pagare questo mese.</p>') + "</div>";
+    html += '<div class="card"><div class="row between"><h3>Da incassare</h3>' + (incassare.length ? '<span class="chip ok">' + euro(sum(incassare)) + "</span>" : "") + "</div>" +
+      (incassare.length ? incassare.map(i => payRow(i, true)).join("") : '<p class="muted small">Niente da incassare questo mese.</p>') + "</div>";
+    // resoconto: entrate e uscite per categoria
+    const ent = CATS_SOLDI.filter(c => ENTRATE.has(c)), usc = CATS_SOLDI.filter(c => !ENTRATE.has(c));
+    const line = c => '<div class="rrow' + (r.cat[c] ? "" : " zero") + '"><span>' + c + "</span><span>" + euro(r.cat[c]) + "</span></div>";
+    const mx = Math.max(entrate, uscite, 1);
+    html += '<div class="card"><h3>Resoconto del mese</h3>' +
+      '<div class="vs"><div><div class="row between small"><span class="muted">Entrato</span><strong>' + euro(entrate) + '</strong></div><div class="vbar"><i style="width:' + (entrate / mx * 100).toFixed(1) + '%;background:var(--ok)"></i></div></div><div><div class="row between small"><span class="muted">Uscito</span><strong>' + euro(uscite) + '</strong></div><div class="vbar"><i style="width:' + (uscite / mx * 100).toFixed(1) + '%;background:var(--bad)"></i></div></div></div>' +
+      '<div class="rgrid"><div class="rcol"><p class="eyebrow ok-t">Entrate</p>' + ent.map(line).join("") + '<div class="rrow tot"><span>Totale</span><span class="ok-t">' + euro(entrate) + '</span></div></div>' +
+      '<div class="rcol"><p class="eyebrow bad-t">Uscite</p>' + usc.map(line).join("") + '<div class="rrow tot"><span>Totale</span><span class="bad-t">' + euro(uscite) + "</span></div></div></div>" +
+      '<div class="rrow saldo"><span>Saldo del mese</span><span class="' + (entrate - uscite < 0 ? "bad-t" : "ok-t") + '">' + euro(entrate - uscite) + "</span></div>" +
+      '<p class="muted small">Conta solo quello che hai già pagato o incassato.' + (sheetUrl() ? ' Mese per mese lo trovi anche nel <a href="' + sheetUrl() + '" target="_blank" rel="noopener">Foglio Google</a>, scheda Resoconto.' : "") + "</p></div>";
     html += '<div class="card"><h3>Segna una spesa o un\'entrata</h3><div class="two"><div class="field"><label for="mv-cosa">Cosa</label><input id="mv-cosa" type="text" maxlength="80" placeholder="Es. Spesa Esselunga"></div><div class="field"><label for="mv-imp">Importo (€)</label><input id="mv-imp" type="text" inputmode="decimal" placeholder="25,50"></div></div>' +
       '<div class="two"><div class="field"><label for="mv-cat">Categoria</label><select id="mv-cat">' + CATS_SOLDI.map(c => '<option' + (c === "Spesa" ? " selected" : "") + ">" + c + "</option>").join("") + '</select></div><div class="field"><label for="mv-data">Data</label><input id="mv-data" type="date" value="' + (key === ym(new Date()) ? ymd(new Date()) : key + "-01") + '"></div></div>' +
       '<label class="row small"><input type="checkbox" id="mv-fatto" checked> Già pagata o incassata</label><div><button class="btn sm" data-addmov>Aggiungi</button></div></div>';
-    html += '<p class="muted small">I pagamenti con l\'importo nel titolo (es. "Pagamento INPS 180 €") arrivano da soli dal calendario. Tutto si salva nella scheda Movimenti del Foglio Google.</p>';
+    html += '<p class="muted small">I pagamenti con l\'importo nel titolo (es. "Pagamento INPS 180 €") arrivano da soli dal calendario. Tutto si salva nella scheda Movimenti del Foglio Google, e se cambi qualcosa lì l\'app lo legge quando tocchi ↻.</p>';
     el.innerHTML = html;
   }
 
@@ -899,7 +960,11 @@
 
   // ---------- Generale ----------
   let toastTimer = null;
-  function toast(t) { const el = document.getElementById("toast"); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2600); }
+  function toast(t, undo) {
+    const el = document.getElementById("toast"); el.textContent = t;
+    if (undo) { const b = document.createElement("button"); b.className = "toast-btn"; b.textContent = "Annulla"; b.onclick = () => { el.hidden = true; undo(); }; el.appendChild(b); }
+    el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, undo ? 5000 : 2600);
+  }
   function setView(v) {
     if (!["oggi", "settimana", "obiettivi", "soldi"].includes(v)) v = "oggi";
     state.view = v;
