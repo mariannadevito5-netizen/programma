@@ -21,9 +21,13 @@
     { key: "tesi", label: "Tesi", words: ["tesi"] },
     { key: "studio", label: "Studio", words: [" pt ", "studio", "inglese", "b2", "esame", "lezione", "corso", "teoria", "universit"] },
     { key: "ricarica", label: "Ricarica", words: ["amici", "terme", "lettura", "leggere", "viaggio", "cena", "aperitivo", "cinema", "teatro", "compleanno", "festa", "allenamento"] },
-    { key: "soldi", label: "Pagamenti", words: ["pagamento", "rata", "inps", "iva", "€", "bolletta", "affitto"] }
+    { key: "soldi", label: "Pagamenti", words: ["pagamento", "rata", "inps", "iva", "€", "bolletta", "affitto", "stipendio"] }
   ];
   const RECHARGE = new Set(["danza", "ricarica"]);
+  const CATS_SOLDI = ["Stipendio", "Altre entrate", "Tasse", "Rate", "Spesa", "Benzina", "Extra"];
+  const ENTRATE = new Set(["Stipendio", "Altre entrate"]);
+  const TRACK_START = "2026-11-01";
+  const PASTI_H = 2.5;
   const GOAL_COLORS = ["studio", "danza", "lavoro", "psico", "ricarica", "soldi"];
 
   const PRESETS = [
@@ -135,7 +139,9 @@
     preset: "split",
     tempoMode: "settimana",
     tempoMonth: null,
-    month: { key: null, status: "idle", events: [] }
+    month: { key: null, status: "idle", events: [] },
+    pay: { key: null, status: "idle", items: [] },
+    soldiMonth: null
   };
 
   // ---------- Salvataggio locale ----------
@@ -204,6 +210,20 @@
   const H_GOALS = ["ID obiettivo", "Obiettivo", "Nome breve", "Colore", "Scadenza", "Data indicativa", "ID step", "Step", "Mese", "Fatto"];
   const H_DAYS = ["Data", "Priorità 1", "Priorità 2", "Priorità 3", "Fatta 1", "Fatta 2", "Fatta 3"];
   const H_SET = ["Impostazione", "Valore"];
+  const H_MOV = ["ID", "Data", "Cosa", "Categoria", "Importo", "Fatto", "ID evento"];
+  const TABS = ["Obiettivi", "Priorità", "Impostazioni", "Movimenti"];
+  const RANGES = ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50", "Movimenti!A1:G3000"];
+  let tabsOk = false;
+  async function ensureTabs() {
+    if (tabsOk) return;
+    const r = await gfetch(SAPI + "/" + sheetId + "?fields=sheets.properties.title");
+    const have = ((await r.json()).sheets || []).map(x => x.properties.title);
+    const miss = TABS.filter(t => !have.includes(t));
+    if (miss.length) await gfetch(SAPI + "/" + sheetId + ":batchUpdate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ requests: miss.map(t => ({ addSheet: { properties: { title: t, gridProperties: { frozenRowCount: 1 } } } })) }) });
+    tabsOk = true;
+    return miss;
+  }
+  function serialToYmd(v) { if (typeof v === "number") { const d = new Date(Date.UTC(1899, 11, 30) + v * 86400000); return d.toISOString().slice(0, 10); } return String(v || "").trim().slice(0, 10); }
   let sheetId = null, saveTimer = null, saveChain = Promise.resolve(), lastRead = 0;
   try { sheetId = localStorage.getItem(LS_SHEET); } catch (e) {}
   function isDirty() { try { return localStorage.getItem(LS_DIRTY) === "1"; } catch (e) { return false; } }
@@ -227,7 +247,7 @@
   async function sheetCreate() {
     const r = await gfetch(SAPI, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({
       properties: { title: SHEET_TITLE, locale: "it_IT", timeZone: TZ },
-      sheets: ["Obiettivi", "Priorità", "Impostazioni"].map((t, i) => ({ properties: { sheetId: i, title: t, gridProperties: { frozenRowCount: 1 } } }))
+      sheets: TABS.map((t, i) => ({ properties: { sheetId: i, title: t, gridProperties: { frozenRowCount: 1 } } }))
     }) });
     sheetId = (await r.json()).spreadsheetId;
     try { localStorage.setItem(LS_SHEET, sheetId); } catch (e) {}
@@ -242,9 +262,10 @@
     }
     const days = [H_DAYS].concat(Object.keys(d.giorni).sort().map(k => { const g = d.giorni[k]; return [k].concat(g.priorita.slice(0, 3), g.fatte.slice(0, 3).map(x => x ? "sì" : "")); }));
     const set = [H_SET].concat(Object.keys(d.settings).map(k => [k, d.settings[k]]));
-    return { goals, days, set };
+    const movs = [H_MOV].concat((d.movimenti || []).slice().sort((a, b) => a.data.localeCompare(b.data)).map(m => [m.id, m.data, m.cosa, m.categoria, m.importo, m.fatto ? "sì" : "", m.evento || ""]));
+    return { goals, days, set, movs };
   }
-  function fromRows(goalRows, dayRows, setRows) {
+  function fromRows(goalRows, dayRows, setRows, movRows, movTab) {
     const d = { version: 1, updatedAt: Date.now(), settings: Object.assign({}, seedData().settings), giorni: {}, obiettivi: [] };
     const byId = {};
     for (const r of (goalRows || []).slice(1)) {
@@ -264,22 +285,34 @@
       d.giorni[k] = { priorita: [1, 2, 3].map(i => String(r[i] || "")), fatte: [4, 5, 6].map(i => yes(r[i])) };
     }
     for (const r of (setRows || []).slice(1)) { const k = String(r[0] || "").trim(); if (k in d.settings && r[1]) d.settings[k] = String(r[1]).trim(); }
+    if (movTab) {
+      d.movimenti = [];
+      for (const r of (movRows || []).slice(1)) {
+        const cosa = String(r[2] || "").trim(); const data = serialToYmd(r[1]);
+        if (!cosa || !/^\d{4}-\d{2}-\d{2}$/.test(data)) continue;
+        const imp = typeof r[4] === "number" ? r[4] : Number(String(r[4] || "0").replace(/\./g, "").replace(",", ".")) || 0;
+        d.movimenti.push({ id: String(r[0] || "").trim() || uid(), data, cosa, categoria: CATS_SOLDI.includes(String(r[3]).trim()) ? String(r[3]).trim() : "Extra", importo: imp, fatto: yes(r[5]), evento: String(r[6] || "").trim() });
+      }
+    }
     return d;
   }
   async function sheetRead() {
-    const p = ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50"].map(x => "ranges=" + encodeURIComponent(x)).join("&");
-    const r = await gfetch(SAPI + "/" + sheetId + "/values:batchGet?valueRenderOption=FORMATTED_VALUE&" + p);
+    const missing = (await ensureTabs()) || [];
+    const p = RANGES.map(x => "ranges=" + encodeURIComponent(x)).join("&");
+    const r = await gfetch(SAPI + "/" + sheetId + "/values:batchGet?valueRenderOption=UNFORMATTED_VALUE&" + p);
     const j = await r.json();
     const v = (j.valueRanges || []).map(x => x.values || []);
     lastRead = Date.now();
-    return { empty: (v[0] || []).length <= 1, data: fromRows(v[0], v[1], v[2]) };
+    const movTab = !missing.includes("Movimenti") && (v[3] || []).length > 0;
+    return { empty: (v[0] || []).length <= 1, data: fromRows(v[0], v[1], v[2], v[3], movTab) };
   }
   async function sheetWrite() {
     if (!sheetId && !(await sheetFind())) await sheetCreate();
+    await ensureTabs();
     const rows = toRows();
-    await gfetch(SAPI + "/" + sheetId + "/values:batchClear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ranges: ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50"] }) });
+    await gfetch(SAPI + "/" + sheetId + "/values:batchClear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ranges: RANGES }) });
     await gfetch(SAPI + "/" + sheetId + "/values:batchUpdate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valueInputOption: "RAW", data: [
-      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }
+      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }, { range: "Movimenti!A1", values: rows.movs }
     ] }) });
     setDirty(false); lastRead = Date.now();
   }
@@ -290,7 +323,7 @@
       if (!(await sheetFind())) { await sheetWrite(); state.sync = "saved"; renderAll(); return; }
       const res = await sheetRead();
       if (res.empty) await sheetWrite();
-      else { state.data = res.data; writeLocal(); }
+      else { state.data = res.data; writeLocal(); if (ensureMovimenti()) changed(); }
       state.sync = "saved";
       renderAll();
     } catch (e) {
@@ -448,6 +481,7 @@
       if (st.level === "bad") html += '<div class="notice bad"><strong>Giornata al limite.</strong><span>Tieni solo le cose fisse e una priorità. Il resto spostalo su un giorno verde.</span></div>';
     }
 
+    if (today) html += oggiPagamenti();
     html += '<div class="card"><h3>Le 3 priorità</h3>';
     for (let i = 0; i < 3; i++) {
       html += '<div class="check' + (g.fatte[i] ? " done" : "") + '"><input type="checkbox" id="pf' + i + '" aria-label="Fatta"' + (g.fatte[i] ? " checked" : "") + '><input type="text" id="pt' + i + '" maxlength="120" placeholder="' + ["La cosa più importante", "Seconda cosa", "Terza cosa"][i] + '" value="' + esc(g.priorita[i] || "") + '"><span></span></div>';
@@ -495,9 +529,128 @@
     renderAll();
   }
 
+  // ---------- Soldi ----------
+  function mv(data, cosa, categoria, importo, fatto) { return { id: uid(), data, cosa, categoria, importo, fatto: !!fatto, evento: "" }; }
+  function initialMovimenti() {
+    // dal vecchio foglio "Entrate e uscite 2026-2027": solo le voci che non sono già sul calendario
+    const out = [mv("2026-11-05", "Spesa", "Spesa", 30, true), mv("2026-11-30", "Vecchio pagamento in arrivo (data da confermare)", "Altre entrate", 1000, false),
+      mv("2026-12-15", "Stipendio palestra", "Stipendio", 1000, false), mv("2027-01-15", "Stipendio palestra", "Stipendio", 1200, false)];
+    ["2026-12", "2027-01", "2027-02", "2027-03", "2027-04", "2027-05", "2027-06", "2027-07"].forEach(m => out.push(mv(m + "-01", "Palestra (abbonamento personale)", "Rate", 35, false)));
+    return out;
+  }
+  function ensureMovimenti() { if (!Array.isArray(state.data.movimenti)) { state.data.movimenti = initialMovimenti(); return true; } return false; }
+  function euro(n) { return (Number(n) || 0).toLocaleString("it-IT", { style: "currency", currency: "EUR", maximumFractionDigits: (Number(n) % 1) ? 2 : 0 }); }
+  function parseAmount(t) {
+    const m = String(t).match(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?\s*(?:€|euro)/i) || String(t).match(/€\s*(\d{1,3}(?:\.\d{3})+|\d+)(?:,(\d{1,2}))?/);
+    if (!m) return 0;
+    return Number(m[1].replace(/\./g, "")) + (m[2] ? Number("0." + m[2]) : 0);
+  }
+  function guessCat(t) {
+    const x = t.toLowerCase();
+    if (x.includes("stipendio")) return "Stipendio";
+    if (/inps|iva|tass|f24|imposta/.test(x)) return "Tasse";
+    if (/rata|corso|abbonamento|affitto|bolletta/.test(x)) return "Rate";
+    if (/benzina|carburante/.test(x)) return "Benzina";
+    if (/spesa|supermercato/.test(x)) return "Spesa";
+    return "Extra";
+  }
+  function cleanTitle(t) { return t.replace(/^pagamento\s+/i, "").replace(/(\d{1,3}(?:\.\d{3})+|\d+)(?:,\d{1,2})?\s*(€|euro)/i, "").replace(/\s+/g, " ").trim() || t; }
+  function endOfMonth(key) { const [y, m] = key.split("-").map(Number); return new Date(y, m, 0); }
+  function soldiKey() { return ym(state.soldiMonth || new Date()); }
+  let payReq = 0;
+  async function loadPayments(force) {
+    if (!getToken()) return;
+    const until = new Date(Math.max(endOfMonth(soldiKey()), addDays(startOfDay(new Date()), 3)));
+    const key = ymd(until);
+    if (!force && state.pay.key === key && (state.pay.status === "ok" || state.pay.status === "loading")) return;
+    const my = ++payReq;
+    state.pay = { key, status: "loading", items: state.pay.items || [] };
+    const p = new URLSearchParams({ timeMin: parseYmd(TRACK_START).toISOString(), timeMax: addDays(until, 1).toISOString(), singleEvents: "true", orderBy: "startTime", maxResults: "2500", timeZone: TZ });
+    try {
+      const r = await gfetch("https://www.googleapis.com/calendar/v3/calendars/primary/events?" + p.toString());
+      const j = await r.json();
+      if (my !== payReq) return;
+      const items = normalize(j.items).filter(ev => ev.cat === "soldi").map(ev => { const c = guessCat(ev.title); return { key: "cal:" + ev.id, evento: ev.id, data: ymd(ev.start), cosa: cleanTitle(ev.title), categoria: c, importo: parseAmount(ev.title), entrata: ENTRATE.has(c), cal: true }; });
+      state.pay = { key, status: "ok", items };
+    } catch (e) { if (my !== payReq) return; state.pay = { key, status: "error", items: [] }; }
+    renderAll();
+  }
+  function allItems() {
+    const done = new Set(state.data.movimenti.filter(m => m.evento && m.fatto).map(m => m.evento));
+    const cal = state.pay.items.filter(i => !done.has(i.evento)).map(i => Object.assign({}, i, { fatto: false }));
+    const man = state.data.movimenti.map(m => ({ key: "man:" + m.id, mov: m, data: m.data, cosa: m.cosa, categoria: m.categoria, importo: m.importo, entrata: ENTRATE.has(m.categoria), fatto: m.fatto, cal: !!m.evento }));
+    return cal.concat(man).sort((a, b) => a.data.localeCompare(b.data));
+  }
+  function payItem(key) {
+    const [kind, id] = [key.slice(0, 3), key.slice(4)];
+    if (kind === "cal") {
+      const it = state.pay.items.find(i => i.evento === id); if (!it) return;
+      state.data.movimenti.push({ id: uid(), data: it.data, cosa: it.cosa, categoria: it.categoria, importo: it.importo, fatto: true, evento: it.evento });
+      toast((it.entrata ? "Incassato: " : "Pagato: ") + it.cosa + (it.importo ? " " + euro(it.importo) : ""));
+    } else {
+      const m = state.data.movimenti.find(x => x.id === id); if (!m) return;
+      m.fatto = true; toast((ENTRATE.has(m.categoria) ? "Incassato: " : "Pagato: ") + m.cosa);
+    }
+    changed(); renderAll();
+  }
+  function unpayItem(id) {
+    const m = state.data.movimenti.find(x => x.id === id); if (!m) return;
+    if (m.evento) state.data.movimenti = state.data.movimenti.filter(x => x !== m); else m.fatto = false;
+    changed(); renderAll();
+  }
+  function dueLabel(dateStr) {
+    const n = daysBetween(new Date(), parseYmd(dateStr));
+    if (n < 0) return '<span class="chip bad">scaduto da ' + (-n) + (n === -1 ? " giorno" : " giorni") + "</span>";
+    if (n === 0) return '<span class="chip warn">oggi</span>';
+    if (n === 1) return '<span class="chip warn">domani</span>';
+    return '<span class="chip soft">tra ' + n + " giorni</span>";
+  }
+  function payRow(i, withDate) {
+    return '<div class="check"><input type="checkbox" data-pay="' + esc(i.key) + '" aria-label="' + (i.entrata ? "Incassato" : "Pagato") + '"><span class="txt">' + esc(i.cosa) + (i.importo ? ' <strong>' + euro(i.importo) + "</strong>" : "") +
+      ' <span class="muted small">· ' + (withDate ? esc(fmtShortDay(i.data)) + " · " : "") + esc(i.categoria) + "</span></span><span class=\"meta\">" + dueLabel(i.data) + "</span></div>";
+  }
+  function fmtShortDay(s) { const d = parseYmd(s); return d.getDate() + " " + MESI_BREVI[d.getMonth()]; }
+  function oggiPagamenti() {
+    if (!getToken()) return "";
+    if (state.pay.status !== "ok" && !state.pay.items.length) return '<div class="card"><h3>Pagamenti</h3><p class="muted small">' + (state.pay.status === "error" ? "Non riesco a leggere i pagamenti dal calendario. Tocca ↻ in alto." : "Controllo i pagamenti…") + "</p></div>";
+    const limit = ymd(addDays(new Date(), 2));
+    const due = allItems().filter(i => !i.fatto && i.data <= limit);
+    if (!due.length) return '<div class="card"><div class="row between"><h3>Pagamenti</h3><span class="chip ok">tutto in regola</span></div><p class="muted small">Niente da pagare o incassare nei prossimi 2 giorni.</p></div>';
+    const tot = due.filter(i => !i.entrata).reduce((a, i) => a + i.importo, 0);
+    return '<div class="card"><div class="row between"><h3>Pagamenti</h3>' + (tot ? '<span class="chip warn">' + euro(tot) + "</span>" : "") + "</div>" + due.map(i => payRow(i, true)).join("") + '<p class="muted small">Spunta quando hai pagato: il resoconto in Cash si aggiorna da solo.</p></div>';
+  }
+  function renderSoldi() {
+    const el = document.getElementById("view-soldi");
+    const key = soldiKey(); const [y, m] = key.split("-").map(Number);
+    const items = allItems();
+    const inMonth = items.filter(i => i.data.slice(0, 7) === key);
+    const oggi = ymd(new Date());
+    const prev = items.filter(i => i.data.slice(0, 7) < key && i.data < oggi && i.data >= TRACK_START && !i.fatto);
+    const sum = arr => arr.reduce((a, i) => a + (Number(i.importo) || 0), 0);
+    const entrate = sum(inMonth.filter(i => i.fatto && i.entrata)), uscite = sum(inMonth.filter(i => i.fatto && !i.entrata));
+    const daPagare = sum(inMonth.filter(i => !i.fatto && !i.entrata)), daIncassare = sum(inMonth.filter(i => !i.fatto && i.entrata));
+    const arretrati = sum(prev.filter(i => !i.entrata));
+    let html = '<div class="row between"><button class="iconbtn" data-smonth="-1" aria-label="Mese prima">‹</button><div class="center"><p class="eyebrow">Cash</p><h1>' + MESI[m - 1] + " " + y + '</h1></div><button class="iconbtn" data-smonth="1" aria-label="Mese dopo">›</button></div>';
+    if (getToken() && state.pay.status === "error") html += '<div class="notice warn"><strong>Non riesco a leggere i pagamenti dal calendario.</strong><span>Tocca ↻ in alto per riprovare.</span></div>';
+    html += '<div class="tiles"><div class="tile"><span class="eyebrow">Entrate incassate</span><span class="num ok-t">' + euro(entrate) + '</span></div><div class="tile"><span class="eyebrow">Uscite pagate</span><span class="num">' + euro(uscite) + '</span></div>' +
+      '<div class="tile"><span class="eyebrow">Saldo del mese</span><span class="num ' + (entrate - uscite < 0 ? "bad-t" : "ok-t") + '">' + euro(entrate - uscite) + '</span></div><div class="tile"><span class="eyebrow">Da pagare</span><span class="num ' + (daPagare + arretrati ? "warn-t" : "") + '">' + euro(daPagare + arretrati) + "</span>" + (arretrati ? '<span class="muted small">di cui arretrati ' + euro(arretrati) + "</span>" : "") + "</div></div>";
+    if (daIncassare) html += '<p class="muted small">Da incassare questo mese: ' + euro(daIncassare) + ".</p>";
+    const pend = prev.concat(inMonth.filter(i => !i.fatto));
+    html += '<div class="card"><h3>Da pagare e da incassare</h3>' + (pend.length ? pend.map(i => payRow(i, true)).join("") : '<p class="muted small">Niente in sospeso questo mese.</p>') + "</div>";
+    const cats = CATS_SOLDI.filter(c => !ENTRATE.has(c)).map(c => [c, sum(inMonth.filter(i => i.fatto && i.categoria === c))]).filter(x => x[1] > 0);
+    if (cats.length) { const mx = Math.max(...cats.map(x => x[1])); html += '<div class="card"><h3>Uscite pagate per categoria</h3>' + cats.map(([c, v]) => '<div class="trow"><span class="sq" style="background:var(--accent)"></span><span class="lab">' + c + '<span class="mini"><i style="width:' + (v / mx * 100).toFixed(1) + '%;background:var(--accent)"></i></span></span><span class="h">' + euro(v) + "</span></div>").join("") + "</div>"; }
+    const done = inMonth.filter(i => i.fatto);
+    html += '<div class="card"><h3>Fatti questo mese</h3>' + (done.length ? done.map(i => '<div class="check done"><input type="checkbox" checked data-unpay="' + esc(i.mov.id) + '" aria-label="Segna come non fatto"><span class="txt">' + esc(i.cosa) + " <strong>" + euro(i.importo) + '</strong> <span class="muted small">· ' + esc(fmtShortDay(i.data)) + " · " + esc(i.categoria) + '</span></span><span class="meta">' + (i.cal ? "" : '<button class="del" data-delmov="' + esc(i.mov.id) + '" aria-label="Elimina">×</button>') + "</span></div>").join("") : '<p class="muted small">Ancora niente. Segna qui sotto le spese che fai.</p>') + "</div>";
+    html += '<div class="card"><h3>Segna una spesa o un\'entrata</h3><div class="two"><div class="field"><label for="mv-cosa">Cosa</label><input id="mv-cosa" type="text" maxlength="80" placeholder="Es. Spesa Esselunga"></div><div class="field"><label for="mv-imp">Importo (€)</label><input id="mv-imp" type="text" inputmode="decimal" placeholder="25,50"></div></div>' +
+      '<div class="two"><div class="field"><label for="mv-cat">Categoria</label><select id="mv-cat">' + CATS_SOLDI.map(c => '<option' + (c === "Spesa" ? " selected" : "") + ">" + c + "</option>").join("") + '</select></div><div class="field"><label for="mv-data">Data</label><input id="mv-data" type="date" value="' + (key === ym(new Date()) ? ymd(new Date()) : key + "-01") + '"></div></div>' +
+      '<label class="row small"><input type="checkbox" id="mv-fatto" checked> Già pagata o incassata</label><div><button class="btn sm" data-addmov>Aggiungi</button></div></div>';
+    html += '<p class="muted small">I pagamenti con l\'importo nel titolo (es. "Pagamento INPS 180 €") arrivano da soli dal calendario. Tutto si salva nella scheda Movimenti del Foglio Google.</p>';
+    el.innerHTML = html;
+  }
+
   // ---------- Dove va il tuo tempo ----------
-  const TEMPO_ORDER = ["lavoro", "studio", "tesi", "danza", "psico", "ricarica", "altro", "viaggi", "libero"];
-  const TEMPO_LABEL = { lavoro: "Lavoro (ViBe)", studio: "Studio", tesi: "Tesi", danza: "Danza", psico: "Psicologa", ricarica: "Ricarica", altro: "Altro", viaggi: "Viaggi", libero: "Tempo libero" };
+  const TEMPO_ORDER = ["lavoro", "studio", "tesi", "danza", "psico", "ricarica", "altro", "viaggi", "pasti", "libero"];
+  const TEMPO_LABEL = { lavoro: "Lavoro (ViBe)", studio: "Studio", tesi: "Tesi", danza: "Danza", psico: "Psicologa", ricarica: "Ricarica", altro: "Altro", viaggi: "Viaggi", pasti: "Pasti", libero: "Tempo libero" };
   function awakeHours() {
     const toMin = t => { const [h, m] = String(t).split(":").map(Number); return h * 60 + (m || 0); };
     let a = toMin(state.data.settings.letto) - toMin(state.data.settings.sveglia);
@@ -518,6 +671,7 @@
         if (ev.cat === "lavoro") work = true;
       }
       if (work) { out.viaggi += COMMUTE_H; busy += COMMUTE_H; }
+      out.pasti += PASTI_H; busy += PASTI_H;
       out.libero += Math.max(0, awake - busy);
     }
     return { out, awake: awake * days };
@@ -559,7 +713,7 @@
     const keys = TEMPO_ORDER.filter(k => out[k] > 0.01);
     const maxH = Math.max(...keys.map(k => out[k]), 1);
     html += '<div class="stack" aria-hidden="true">' + keys.map(k => '<i style="width:' + (out[k] / awake * 100).toFixed(2) + '%;background:var(--c-' + k + ')"></i>').join("") + "</div>";
-    html += '<p class="muted small">Su ' + hoursTxt(awake) + " da sveglia " + label + ", calcolate dal calendario e dall'orario del sonno.</p>";
+    html += '<p class="muted small">Su ' + hoursTxt(awake) + " da sveglia " + label + ", calcolate dal calendario e dall'orario del sonno, con 2 ore e 30 al giorno per i pasti.</p>";
     html += keys.map(k => '<div class="trow"><span class="sq" style="background:var(--c-' + k + ')"></span><span class="lab">' + TEMPO_LABEL[k] + '<span class="mini"><i style="width:' + (out[k] / maxH * 100).toFixed(1) + '%;background:var(--c-' + k + ')"></i></span></span><span class="h">' + hoursTxt(out[k]) + " <small>" + Math.round(out[k] / awake * 100) + "%</small></span></div>").join("");
     if (out.libero / awake < 0.2) html += '<p class="notice warn">Il tempo libero è sotto il 20%. Proteggi almeno una sera senza impegni.</p>';
     return html + "</div>";
@@ -747,10 +901,10 @@
   let toastTimer = null;
   function toast(t) { const el = document.getElementById("toast"); el.textContent = t; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 2600); }
   function setView(v) {
-    if (!["oggi", "settimana", "obiettivi"].includes(v)) v = "oggi";
+    if (!["oggi", "settimana", "obiettivi", "soldi"].includes(v)) v = "oggi";
     state.view = v;
     try { localStorage.setItem(LS_VIEW, v); } catch (e) {}
-    ["oggi", "settimana", "obiettivi"].forEach(k => {
+    ["oggi", "settimana", "obiettivi", "soldi"].forEach(k => {
       document.getElementById("view-" + k).hidden = k !== v;
       const t = document.getElementById("tab-" + k);
       if (k === v) t.setAttribute("aria-current", "page"); else t.removeAttribute("aria-current");
@@ -770,6 +924,8 @@
     if (state.view === "oggi") renderOggi();
     if (state.view === "settimana") renderSettimana();
     if (state.view === "obiettivi") renderObiettivi();
+    if (state.view === "soldi") renderSoldi();
+    if ((state.view === "soldi" || state.view === "oggi") && getToken()) loadPayments();
   }
 
   // Un solo gestore per tutti i clic della pagina
@@ -781,6 +937,18 @@
     else if (ds.viewGo) { setView(ds.viewGo); window.scrollTo(0, 0); }
     else if (ds.tema) { state.data.settings.tema = ds.tema; changed(); renderAll(); }
     else if ("login" in ds) login(false);
+    else if (ds.smonth) { const b = state.soldiMonth || new Date(); state.soldiMonth = new Date(b.getFullYear(), b.getMonth() + Number(ds.smonth), 1); renderAll(); }
+    else if (ds.delmov) { state.data.movimenti = state.data.movimenti.filter(x => x.id !== ds.delmov); changed(); toast("Movimento eliminato"); renderAll(); }
+    else if ("addmov" in ds) {
+      const cosa = document.getElementById("mv-cosa").value.trim();
+      const imp = Number(document.getElementById("mv-imp").value.replace(/\./g, "").replace(",", ".").replace(/[^0-9.]/g, ""));
+      const data = document.getElementById("mv-data").value;
+      if (!cosa) { document.getElementById("mv-cosa").focus(); return; }
+      if (!imp) { document.getElementById("mv-imp").focus(); toast("Scrivi l'importo"); return; }
+      if (!data) return;
+      state.data.movimenti.push({ id: uid(), data, cosa, categoria: document.getElementById("mv-cat").value, importo: imp, fatto: document.getElementById("mv-fatto").checked, evento: "" });
+      changed(); toast("Segnato: " + cosa + " " + euro(imp)); renderAll();
+    }
     else if ("reload" in ds) loadWeek();
     else if (ds.day) moveDay(Number(ds.day));
     else if (ds.week) moveWeek(Number(ds.week));
@@ -822,6 +990,8 @@
   document.addEventListener("change", e => {
     const t = e.target;
     if (t.dataset && t.dataset.step) toggleStep(t.dataset.step, t.checked);
+    else if (t.dataset && t.dataset.pay) payItem(t.dataset.pay);
+    else if (t.dataset && t.dataset.unpay) unpayItem(t.dataset.unpay);
   });
 
   document.getElementById("open-add").onclick = () => openAdd();
@@ -830,7 +1000,7 @@
     if (!getToken()) { if (CFG.googleClientId) login(false); return; }
     const b = document.getElementById("refresh"); b.disabled = true;
     if (state.tempoMode === "mese") state.month.status = "stale";
-    await Promise.all([loadWeek(), syncSheet(), state.tempoMode === "mese" ? loadMonth() : null]);
+    await Promise.all([loadWeek(), syncSheet(), state.tempoMode === "mese" ? loadMonth() : null, loadPayments(true)]);
     b.disabled = false;
     toast(state.cal === "ok" ? "Calendario e obiettivi aggiornati" : "Non sono riuscita ad aggiornare. Riprova tra poco.");
   };
@@ -846,6 +1016,7 @@
   state.data = readLocal() || seedData();
   if (!state.data.giorni) state.data.giorni = {};
   if (!state.data.settings.tema) state.data.settings.tema = "chiaro";
+  if (ensureMovimenti()) writeLocal();
   let startView = state.view;
   try { if (startView === "oggi") startView = localStorage.getItem(LS_VIEW) || "oggi"; } catch (e) {}
   setView(startView);
