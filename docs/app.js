@@ -62,7 +62,7 @@
     return {
       version: 1,
       updatedAt: 0,
-      settings: { letto: "23:30", sveglia: "07:30", sabatoInizio: "09:00", sabatoFine: "13:00" },
+      settings: { letto: "23:30", sveglia: "07:30", sabatoInizio: "09:00", sabatoFine: "13:00", tema: "chiaro" },
       giorni: {},
       obiettivi: [
         { id: "pt", breve: "PT", nome: "Esame Personal Trainer", colore: "lavoro", scadenza: "2027-01-31", indicativa: false, step: [
@@ -682,7 +682,15 @@
     });
     renderAll();
   }
+  const THEME_COLOR = { chiaro: "#4A3FCF", notte: "#0E2533", studio: "#D9466F" };
+  function applyTheme() {
+    const t = THEME_COLOR[state.data.settings.tema] ? state.data.settings.tema : "chiaro";
+    if (document.documentElement.dataset.tema !== t) document.documentElement.dataset.tema = t;
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", THEME_COLOR[t]);
+    document.querySelectorAll(".theme-opt").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tema === t)));
+  }
   function renderAll() {
+    applyTheme();
     renderTop();
     if (state.view === "oggi") renderOggi();
     if (state.view === "settimana") renderSettimana();
@@ -696,6 +704,7 @@
     const ds = t.dataset;
     if (ds.view) { setView(ds.view); window.scrollTo(0, 0); }
     else if (ds.viewGo) { setView(ds.viewGo); window.scrollTo(0, 0); }
+    else if (ds.tema) { state.data.settings.tema = ds.tema; changed(); renderAll(); }
     else if ("login" in ds) login(false);
     else if ("reload" in ds) loadWeek();
     else if (ds.day) moveDay(Number(ds.day));
@@ -751,6 +760,7 @@
   handleRedirect();
   state.data = readLocal() || seedData();
   if (!state.data.giorni) state.data.giorni = {};
+  if (!state.data.settings.tema) state.data.settings.tema = "chiaro";
   let startView = state.view;
   try { if (startView === "oggi") startView = localStorage.getItem(LS_VIEW) || "oggi"; } catch (e) {}
   setView(startView);
