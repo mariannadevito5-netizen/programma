@@ -761,8 +761,10 @@
     let html = '<div class="card"><div class="row between wrapx"><h3>Dove va il tuo tempo</h3><div class="seg"><button data-tempo="settimana" aria-pressed="' + !mese + '">Settimana</button><button data-tempo="mese" aria-pressed="' + mese + '">Mese</button></div></div>';
     let data = null, label = "";
     if (!mese) {
-      if (state.cal !== "ok") return html + '<p class="muted small">Le ore compaiono quando il calendario è collegato.</p></div>';
-      data = tempo(state.events, state.weekStart, 7); label = "questa settimana";
+      const ws = state.weekStart, we = addDays(ws, 6), cur = ymd(ws) === ymd(mondayOf(new Date()));
+      html += '<div class="row between"><button class="iconbtn" data-week="-1" aria-label="Settimana prima">‹</button><strong>' + (cur ? "Questa settimana" : ws.getDate() + (ws.getMonth() !== we.getMonth() ? " " + MESI_BREVI[ws.getMonth()] : "") + "–" + we.getDate() + " " + MESI_BREVI[we.getMonth()]) + '</strong><button class="iconbtn" data-week="1" aria-label="Settimana dopo">›</button></div>';
+      if (state.cal !== "ok") return html + '<p class="muted small">' + (state.cal === "loading" ? "Conto le ore della settimana…" : "Le ore compaiono quando il calendario è collegato.") + "</p></div>";
+      data = tempo(state.events, state.weekStart, 7); label = cur ? "questa settimana" : "in quella settimana";
     } else {
       const key = monthKey(); const [y, m] = key.split("-").map(Number);
       html += '<div class="row between"><button class="iconbtn" data-tmonth="-1" aria-label="Mese prima">‹</button><strong>' + MESI[m - 1] + " " + y + '</strong><button class="iconbtn" data-tmonth="1" aria-label="Mese dopo">›</button></div>';
@@ -803,7 +805,6 @@
     if (ok) html += '<p class="muted small">' + hoursTxt(total) + " impegnate in tutto, viaggi per la palestra compresi. " + (red ? red + (red === 1 ? " giorno al limite." : " giorni al limite.") : yellow ? yellow + (yellow === 1 ? " giorno pieno." : " giorni pieni.") : "Settimana leggera.") + "</p>";
     html += "</div>";
 
-    html += tempoCard();
     if (ok && red >= 2) html += '<div class="notice bad"><strong>Questa settimana rischi il sovraccarico.</strong><span>Hai ' + red + " giorni al limite. Sposta o togli almeno un impegno non fisso prima di ammalarti.</span></div>";
     if (ok && !recharge) html += '<div class="notice warn"><strong>Manca una cosa che ti ricarica.</strong><span>Metti in calendario un momento tra amici, danza, lettura o terme. La domenica è libera.</span></div>';
 
@@ -834,6 +835,7 @@
     html += '<div class="card"><div class="hero-ring">' + ring(tot.pct, "studio", "lg") + '<div class="row" style="flex-direction:column;align-items:flex-start;gap:6px;min-width:0"><h2>' + tot.done + (tot.done === 1 ? " step fatto su " : " step fatti su ") + tot.total + '</h2><p class="muted">' + motto(tot.pct) + "</p></div></div>" +
       '<div class="mini-rings">' + gs.map(g => '<button data-open="' + g.id + '">' + ring(goalProgress(g).pct, g.colore, "sm") + '<span class="name">' + esc(shortName(g)) + "</span></button>").join("") + "</div></div>";
 
+    html += tempoCard();
     html += gs.map(g => goalCard(g)).join("");
     html += '<div class="card"><h3>Nuovo obiettivo</h3><div class="field"><label for="ng-name">Nome</label><input id="ng-name" type="text" maxlength="80" placeholder="Es. Spettacolo di danza a giugno"></div><div class="field"><label for="ng-date">Scadenza (facoltativa)</label><input id="ng-date" type="date"></div><div><button class="btn sm" data-newgoal>Aggiungi obiettivo</button></div></div>';
     el.innerHTML = html;
