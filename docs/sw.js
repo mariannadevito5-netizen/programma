@@ -1,6 +1,6 @@
 // Tiene l'app disponibile anche senza rete. Prima prova la rete (così gli
 // aggiornamenti arrivano subito), poi usa la copia salvata.
-const CACHE = "agenda-v10";
+const CACHE = "agenda-v11";
 const SHELL = ["./", "index.html", "style.css", "app.js", "config.js", "comandi.js", "voce.js", "manifest.webmanifest", "icon.svg", "icon-192.png", "apple-touch-icon.png"];
 
 self.addEventListener("install", e => {
@@ -13,7 +13,7 @@ self.addEventListener("fetch", e => {
   const url = new URL(e.request.url);
   if (e.request.method !== "GET" || url.origin !== self.location.origin) return;
   e.respondWith(
-    fetch(e.request).then(res => {
+    fetch(e.request.mode === "navigate" ? new Request(e.request.url, { cache: "no-cache", credentials: "same-origin" }) : new Request(e.request, { cache: "no-cache" })).then(res => {
       const copy = res.clone();
       caches.open(CACHE).then(c => c.put(e.request, copy));
       return res;

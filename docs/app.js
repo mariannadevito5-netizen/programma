@@ -1066,6 +1066,7 @@
   document.getElementById("refresh").onclick = async () => {
     if (!getToken()) { if (CFG.googleClientId) login(false); return; }
     const b = document.getElementById("refresh"); b.disabled = true;
+    if (window.__agendaCheckUpdate) window.__agendaCheckUpdate();
     if (state.tempoMode === "mese") state.month.status = "stale";
     await Promise.all([loadWeek(), syncSheet(), state.tempoMode === "mese" ? loadMonth() : null, loadPayments(true)]);
     b.disabled = false;
@@ -1117,5 +1118,21 @@
     if (!isDirty() && Date.now() - lastRead > 2 * 60000) syncSheet();
   });
 
-  if ("serviceWorker" in navigator && location.protocol === "https:") navigator.serviceWorker.register("sw.js").catch(() => {});
+  // Aggiornamenti dell'app: quando pubblico una versione nuova, l'app la scarica
+  // da sola (all'apertura, quando torni nell'app e con ↻) e si ricarica.
+  let swReg = null;
+  function checkUpdate() { if (swReg) swReg.update().catch(() => {}); }
+  if ("serviceWorker" in navigator && location.protocol === "https:") {
+    const hadController = !!navigator.serviceWorker.controller;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (!hadController || reloaded) return;
+      reloaded = true;
+      const idle = !document.querySelector(".sheet-bg:not([hidden])");
+      if (idle) location.reload(); else toast("C'è una versione nuova: chiudi e riapri l'app");
+    });
+    navigator.serviceWorker.register("sw.js", { updateViaCache: "none" }).then(r => { swReg = r; checkUpdate(); }).catch(() => {});
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") checkUpdate(); });
+  }
+  window.__agendaCheckUpdate = () => checkUpdate();
 })();
