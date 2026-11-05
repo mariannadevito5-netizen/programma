@@ -477,7 +477,7 @@
     const tot = overall();
     const gs = state.data.obiettivi;
     let html = '<div><p class="eyebrow">Fino a luglio 2027</p><h1>Obiettivi</h1></div>';
-    html += '<div class="card"><div class="hero-ring">' + ring(tot.pct, "studio", "lg") + '<div class="row" style="flex-direction:column;align-items:flex-start;gap:6px;min-width:0"><h2>' + tot.done + " step fatti su " + tot.total + '</h2><p class="muted">' + motto(tot.pct) + "</p></div></div>" +
+    html += '<div class="card"><div class="hero-ring">' + ring(tot.pct, "studio", "lg") + '<div class="row" style="flex-direction:column;align-items:flex-start;gap:6px;min-width:0"><h2>' + tot.done + (tot.done === 1 ? " step fatto su " : " step fatti su ") + tot.total + '</h2><p class="muted">' + motto(tot.pct) + "</p></div></div>" +
       '<div class="mini-rings">' + gs.map(g => '<button data-open="' + g.id + '">' + ring(goalProgress(g).pct, g.colore, "sm") + '<span class="name">' + esc(shortName(g)) + "</span></button>").join("") + "</div></div>";
 
     html += gs.map(g => goalCard(g)).join("");
