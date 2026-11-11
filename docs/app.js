@@ -400,13 +400,13 @@
   function dayStats(day) {
     const s = startOfDay(day), e = addDays(s, 1);
     const evs = eventsOn(day);
-    let hours = 0, work = false, late = false, early = false, recharge = false;
+    let hours = 0, workH = 0, work = false, late = false, early = false, recharge = false;
     for (const ev of evs) {
       if (RECHARGE.has(ev.cat)) recharge = true;
       if (ev.allDay || ev.free) continue;
       const a = Math.max(ev.start, s), b = Math.min(ev.end, e);
       hours += Math.max(0, (b - a) / 3600000);
-      if (ev.cat === "lavoro") work = true;
+      if (ev.cat === "lavoro") { work = true; workH += Math.max(0, (b - a) / 3600000); }
       if (ev.end > e || (sameDay(ev.end, s) && ev.end.getHours() * 60 + ev.end.getMinutes() > 22 * 60 + 30)) late = true;
       if (sameDay(ev.start, s) && ev.start.getHours() < 8) early = true;
     }
@@ -414,9 +414,13 @@
     const busy = evs.filter(ev => !ev.allDay && !ev.free);
     const overlap = busy.some((a, i) => busy.some((b, j) => j > i && a.start < b.end && b.start < a.end));
     const level = hours <= 0 ? "none" : hours <= 6 ? "ok" : hours <= 9.5 ? "warn" : "bad";
-    return { evs, hours, level, late, early, recharge, overlap };
+    return { evs, hours, workH, level, late, early, recharge, overlap };
   }
   const LEVEL_TXT = { none: "Libero", ok: "Leggero", warn: "Pieno", bad: "Al limite" };
+  // Riassunto del giorno: conta solo le ore di lavoro (il colore dice comunque quanto è carica la giornata)
+  function workChip(st) {
+    return '<span class="chip ' + (st.level === "none" ? "soft" : st.level) + '">' + (st.workH > 0 ? hoursTxt(st.workH) + " di lavoro" : "Niente lavoro") + "</span>";
+  }
   function hoursTxt(h) { if (h <= 0) return "0 h"; return String(Math.round(h * 2) / 2).replace(".", ",") + " h"; }
 
   function goalProgress(g) {
@@ -462,9 +466,11 @@
     if (state.cal === "error") return '<div class="notice warn"><strong>' + esc(state.calMsg) + '</strong><div><button class="btn sm ghost" data-reload>Riprova</button></div></div>';
     return "";
   }
+  const evIndex = {};
   function evRow(ev) {
     const time = ev.allDay ? "tutto il giorno" : hm(ev.start) + "–" + hm(ev.end);
-    return '<div class="ev' + (ev.allDay ? " allday" : "") + '"><span class="dot" style="background:var(--c-' + ev.cat + ')"></span><span class="t">' + time + '</span><span class="n">' + esc(ev.title) + "</span></div>";
+    evIndex[ev.id] = ev;
+    return '<button class="ev' + (ev.allDay ? " allday" : "") + '" data-ev="' + esc(ev.id) + '" aria-label="Modifica ' + esc(ev.title) + '"><span class="dot" style="background:var(--c-' + ev.cat + ')"></span><span class="t">' + time + '</span><span class="n">' + esc(ev.title) + '</span><span class="pen" aria-hidden="true">›</span></button>';
   }
 
   // ---------- Vista Oggi ----------
@@ -482,7 +488,7 @@
       '<button class="iconbtn" data-day="1" aria-label="Giorno dopo">›</button></div>';
     html += calNotice();
     if (ok) {
-      html += '<div class="row wrapx" style="justify-content:center"><span class="chip ' + (st.level === "none" ? "soft" : st.level) + '">' + LEVEL_TXT[st.level] + " · " + hoursTxt(st.hours) + " impegnate</span>" + (st.recharge ? '<span class="chip ok">Ricarica in programma</span>' : "") + "</div>";
+      html += '<div class="row wrapx" style="justify-content:center">' + workChip(st) + (st.recharge ? '<span class="chip ok">Ricarica in programma</span>' : "") + "</div>";
       if (st.overlap) html += '<div class="notice bad"><strong>Due impegni si sovrappongono.</strong><span>Controlla l\'agenda qui sotto e sposta quello che non è fisso.</span></div>';
       if (st.level === "bad") html += '<div class="notice bad"><strong>Giornata al limite.</strong><span>Tieni solo le cose fisse e una priorità. Il resto spostalo su un giorno verde.</span></div>';
     }
@@ -802,7 +808,7 @@
       const s = stats[i], h = ok ? Math.min(100, (s.hours / 12) * 100) : 0;
       return '<button class="col' + (sameDay(d, new Date()) ? " today" : "") + '" data-jump="' + ymd(d) + '" aria-label="' + esc(fmtDay(d)) + ", " + LEVEL_TXT[s.level] + '"><div class="bar"><div class="fill ' + s.level + '" style="height:' + h + '%"></div></div><span class="lbl">' + GIORNI_BREVI[d.getDay()] + " " + d.getDate() + "</span></button>";
     }).join("") + "</div>";
-    if (ok) html += '<p class="muted small">' + hoursTxt(total) + " impegnate in tutto, viaggi per la palestra compresi. " + (red ? red + (red === 1 ? " giorno al limite." : " giorni al limite.") : yellow ? yellow + (yellow === 1 ? " giorno pieno." : " giorni pieni.") : "Settimana leggera.") + "</p>";
+    if (ok) html += '<p class="muted small">' + hoursTxt(stats.reduce((a, x) => a + x.workH, 0)) + " di lavoro questa settimana. " + (red ? red + (red === 1 ? " giorno al limite." : " giorni al limite.") : yellow ? yellow + (yellow === 1 ? " giorno pieno." : " giorni pieni.") : "Settimana leggera.") + "</p>";
     html += "</div>";
 
     if (ok && red >= 2) html += '<div class="notice bad"><strong>Questa settimana rischi il sovraccarico.</strong><span>Hai ' + red + " giorni al limite. Sposta o togli almeno un impegno non fisso prima di ammalarti.</span></div>";
@@ -815,7 +821,7 @@
       if (s.early) flags.push('<span class="chip warn">Inizi presto</span>');
       if (s.recharge) flags.push('<span class="chip ok">Ricarica</span>');
       return '<div class="card day' + (sameDay(d, new Date()) ? " today" : "") + '" id="d-' + ymd(d) + '"><div class="day-head"><span class="day-name">' + GIORNI[d.getDay()] + " " + d.getDate() + "</span>" +
-        (ok ? '<span class="chip ' + (s.level === "none" ? "soft" : s.level) + '">' + LEVEL_TXT[s.level] + " · " + hoursTxt(s.hours) + "</span>" : "") + "</div>" +
+        (ok ? workChip(s) : "") + "</div>" +
         (flags.length ? '<div class="flags">' + flags.join("") + "</div>" : "") +
         (ok ? (s.evs.length ? s.evs.map(evRow).join("") : '<p class="empty-day">Niente in calendario.</p>') : "") +
         '<div><button class="btn sm ghost" data-add="' + ymd(d) + '">+ Aggiungi</button></div></div>';
@@ -935,6 +941,65 @@
     btn.disabled = false; btn.textContent = "Aggiungi";
   }
 
+  // ---------- Modifica un impegno ----------
+  let editing = null;
+  function openEdit(id) {
+    const ev = evIndex[id]; if (!ev) return;
+    editing = ev;
+    document.getElementById("ed-title").value = ev.title;
+    document.getElementById("ed-date").value = ymd(ev.start);
+    document.getElementById("ed-allday").checked = ev.allDay;
+    document.getElementById("ed-start").value = ev.allDay ? "09:00" : hm(ev.start);
+    document.getElementById("ed-end").value = ev.allDay ? "10:00" : hm(ev.end);
+    document.getElementById("ed-times").hidden = ev.allDay;
+    document.getElementById("ed-error").hidden = true;
+    const del = document.getElementById("ed-del"); del.dataset.armed = ""; del.textContent = "Cancella impegno";
+    document.getElementById("ed-sheet").hidden = false;
+  }
+  async function saveEdit() {
+    const ev = editing; if (!ev) return;
+    const err = document.getElementById("ed-error"); err.hidden = true;
+    const fail = m => { err.textContent = m; err.hidden = false; };
+    const title = document.getElementById("ed-title").value.trim(), d = document.getElementById("ed-date").value;
+    const allDay = document.getElementById("ed-allday").checked, a = document.getElementById("ed-start").value, b = document.getElementById("ed-end").value;
+    if (!title) return fail("Scrivi un nome per l'impegno.");
+    if (!d) return fail("Scegli il giorno.");
+    if (!allDay && (!a || !b || b <= a)) return fail("L'orario di fine deve essere dopo l'inizio.");
+    const day = parseYmd(d);
+    const body = { summary: title };
+    if (allDay) { const len = ev.allDay ? Math.max(1, daysBetween(ev.start, ev.end)) : 1; body.start = { date: d }; body.end = { date: ymd(addDays(day, len)) }; }
+    else { body.start = { dateTime: localIso(day, a), timeZone: TZ }; body.end = { dateTime: localIso(day, b), timeZone: TZ }; }
+    const btn = document.getElementById("ed-save"); btn.disabled = true; btn.textContent = "Salvo…";
+    try {
+      await gfetch("https://www.googleapis.com/calendar/v3/calendars/primary/events/" + encodeURIComponent(ev.id), { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      document.getElementById("ed-sheet").hidden = true;
+      toast("Modificato: " + title);
+      afterCalChange(d);
+    } catch (e) { fail(e instanceof AuthError ? "L'accesso a Google è scaduto: accedi di nuovo e riprova." : e.status === 403 ? "Google non mi lascia modificare questo impegno (forse è di un calendario condiviso)." : "Google Calendar non ha risposto. Riprova tra poco."); }
+    btn.disabled = false; btn.textContent = "Salva";
+  }
+  async function deleteEdit() {
+    const ev = editing; if (!ev) return;
+    const del = document.getElementById("ed-del");
+    if (!del.dataset.armed) { del.dataset.armed = "1"; del.textContent = "Tocca di nuovo per cancellare"; return; }
+    const err = document.getElementById("ed-error"); err.hidden = true;
+    del.disabled = true;
+    try {
+      await gfetch("https://www.googleapis.com/calendar/v3/calendars/primary/events/" + encodeURIComponent(ev.id), { method: "DELETE" });
+      document.getElementById("ed-sheet").hidden = true;
+      toast("Cancellato: " + ev.title);
+      afterCalChange(ymd(ev.start));
+    } catch (e) { err.textContent = e instanceof AuthError ? "L'accesso a Google è scaduto: accedi di nuovo e riprova." : e.status === 403 ? "Google non mi lascia cancellare questo impegno (forse è di un calendario condiviso)." : "Google Calendar non ha risposto. Riprova tra poco."; err.hidden = false; }
+    del.disabled = false;
+  }
+  function afterCalChange(day) {
+    const ws = mondayOf(parseYmd(day));
+    if (ymd(ws) !== ymd(state.weekStart) && state.view === "settimana") { state.weekStart = ws; state.events = []; }
+    loadWeek();
+    if (state.tempoMode === "mese") { state.month.status = "stale"; loadMonth(); }
+    loadPayments(true);
+  }
+
   // ---------- Impostazioni ----------
   function openSettings() {
     const s = state.data.settings;
@@ -1016,6 +1081,7 @@
       state.data.movimenti.push({ id: uid(), data, cosa, categoria: document.getElementById("mv-cat").value, importo: imp, fatto: document.getElementById("mv-fatto").checked, evento: "" });
       changed(); toast("Segnato: " + cosa + " " + euro(imp)); renderAll();
     }
+    else if (ds.ev) openEdit(ds.ev);
     else if ("reload" in ds) loadWeek();
     else if (ds.day) moveDay(Number(ds.day));
     else if (ds.week) moveWeek(Number(ds.week));
@@ -1062,6 +1128,9 @@
   });
 
   document.getElementById("open-add").onclick = () => openAdd();
+  document.getElementById("ed-save").onclick = saveEdit;
+  document.getElementById("ed-del").onclick = deleteEdit;
+  document.getElementById("ed-allday").onchange = e => { document.getElementById("ed-times").hidden = e.target.checked; };
   document.getElementById("open-settings").onclick = openSettings;
   document.getElementById("refresh").onclick = async () => {
     if (!getToken()) { if (CFG.googleClientId) login(false); return; }

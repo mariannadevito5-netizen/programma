@@ -93,6 +93,25 @@
   </div>
 </div>
 
+<div class="sheet-bg" id="ed-sheet" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="ed-title-h">
+    <div class="row between">
+      <h2 id="ed-title-h">Modifica impegno</h2>
+      <button class="iconbtn" data-close="ed-sheet" aria-label="Chiudi">×</button>
+    </div>
+    <div class="field"><label for="ed-title">Nome</label><input type="text" id="ed-title" maxlength="120"></div>
+    <div class="field"><label for="ed-date">Giorno</label><input type="date" id="ed-date"></div>
+    <label class="row small"><input type="checkbox" id="ed-allday"> Tutto il giorno</label>
+    <div class="two" id="ed-times">
+      <div class="field"><label for="ed-start">Inizio</label><input type="time" id="ed-start"></div>
+      <div class="field"><label for="ed-end">Fine</label><input type="time" id="ed-end"></div>
+    </div>
+    <p id="ed-error" class="notice bad" hidden></p>
+    <button class="btn" id="ed-save">Salva</button>
+    <button class="btn ghost danger" id="ed-del">Cancella impegno</button>
+  </div>
+</div>
+
 <div class="sheet-bg" id="voce-sheet" hidden>
   <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="voce-title-h">
     <div class="row between">
