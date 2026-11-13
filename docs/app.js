@@ -262,7 +262,8 @@
       if (!g.step.length) goals.push(base.concat(["", "", "", ""]));
       for (const s of g.step) goals.push(base.concat([s.id, s.testo, s.mese || "", s.fatto ? "sì" : ""]));
     }
-    const days = [H_DAYS].concat(Object.keys(d.giorni).sort().map(k => { const g = d.giorni[k]; return [k].concat(g.priorita.slice(0, 3), g.fatte.slice(0, 3).map(x => x ? "sì" : "")); }));
+    // le vecchie priorità del giorno sono passate nella scheda "Da fare"
+    const days = Array.isArray(d.todo) ? [["Le priorità adesso sono nella scheda Da fare."]] : [H_DAYS].concat(Object.keys(d.giorni).sort().map(k => { const g = d.giorni[k]; return [k].concat(g.priorita.slice(0, 3), g.fatte.slice(0, 3).map(x => x ? "sì" : "")); }));
     const set = [H_SET].concat(Object.keys(d.settings).map(k => [k, d.settings[k]]));
     const movs = [H_MOV].concat((d.movimenti || []).slice().sort((a, b) => a.data.localeCompare(b.data)).map(m => [m.data, m.cosa, m.categoria, m.importo, m.fatto ? "Sì" : "No", m.id, m.evento || ""]));
     const todo = [H_TODO].concat((d.todo || []).map(t => [t.testo, t.creato, t.fatto ? "Sì" : "No", t.fattoIl || "", t.id]));
@@ -500,7 +501,7 @@
     if (ok) {
       html += '<div class="row wrapx" style="justify-content:center">' + workChip(st) + (st.recharge ? '<span class="chip ok">Ricarica in programma</span>' : "") + "</div>";
       if (st.overlap) html += '<div class="notice bad"><strong>Due impegni si sovrappongono.</strong><span>Controlla l\'agenda qui sotto e sposta quello che non è fisso.</span></div>';
-      if (st.level === "bad") html += '<div class="notice bad"><strong>Giornata al limite.</strong><span>Tieni solo le cose fisse e una priorità. Il resto spostalo su un giorno verde.</span></div>';
+      if (st.level === "bad") html += '<div class="notice bad"><strong>Giornata al limite.</strong><span>Tieni solo le cose fisse e le priorità più urgenti. Il resto spostalo su un giorno verde.</span></div>';
     }
 
     if (today) html += oggiPagamenti();
@@ -561,7 +562,7 @@
   }
   function todoCard() {
     const list = todoVisible(), open = list.filter(t => !t.fatto).length;
-    let html = '<div class="card" id="todo-card"><div class="row between"><h3>Le mie priorità</h3>' + (list.length ? '<span class="chip ' + (open ? "soft" : "ok") + '">' + (open ? open + " da fare" : "tutto fatto") + "</span>" : "") + "</div>";
+    let html = '<div class="card" id="todo-card"><div class="row between"><h3>Priorità</h3>' + (list.length ? '<span class="chip ' + (open ? "soft" : "ok") + '">' + (open ? open + " da fare" : "tutto fatto") + "</span>" : "") + "</div>";
     html += list.map(t => '<div class="check' + (t.fatto ? " done" : "") + '"><input type="checkbox" data-todo="' + t.id + '" aria-label="Fatta"' + (t.fatto ? " checked" : "") + '><input type="text" data-todotxt="' + t.id + '" maxlength="120" value="' + esc(t.testo) + '"><span class="meta">' + (t.fatto ? "" : esc(todoAge(t))) + "</span></div>").join("");
     html += '<div class="check add"><span class="plus" aria-hidden="true">+</span><input type="text" id="todo-new" maxlength="120" placeholder="' + (list.length ? "Aggiungi un'altra cosa" : "La cosa più importante") + '" enterkeyhint="done"><span></span></div>';
     html += '<p class="muted small">Restano qui finché non le spunti. Quelle fatte spariscono il giorno dopo.</p></div>';
