@@ -158,6 +158,11 @@
     let t = clean(raw);
     let m;
 
+    // Priorità: "aggiungi alle priorità chiamare il commercialista"
+    if ((m = t.match(/^ (?:aggiungi |metti |segna |scrivi )?(?:alle |nelle |tra le |in |nella lista delle )(?:mie )?(?:priorità|cose da fare|da fare|lista) (.+)$/)) || (m = t.match(/^ (?:priorità|da fare|nuova priorità)[: ]+(.+)$/))) {
+      const txt = tidy(m[1]);
+      if (txt) return { tipo: "todo", testo: cap(restore(txt, raw)), raw };
+    }
     // Obiettivi: "fatto lo step ...", "ho finito ...", "completato ..."
     if ((m = t.match(/^ (?:ho )?(?:fatto|finito|completato|terminato|chiuso|spunta|segna (?:come )?fatto)(?: lo step| il passo| lo)? (.+)$/)) && !/ (euro|€) /.test(t)) {
       return { tipo: "step", cerca: tidy(m[1]), testo: raw };

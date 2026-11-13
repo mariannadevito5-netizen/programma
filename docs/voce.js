@@ -3,7 +3,7 @@
 // Usa le funzioni dell'app che app.js espone in window.AgendaApp.
 (function () {
   "use strict";
-  const ESEMPI = ["Aggiungi danza giovedì dalle 18 alle 20", "Sposta la psicologa a venerdì alle 17", "Cancella studio di domani", "Spesa 25 euro Esselunga", "Ho pagato l'INPS", "Fatto il ripasso di anatomia"];
+  const ESEMPI = ["Aggiungi alle priorità chiamare il commercialista", "Aggiungi danza giovedì dalle 18 alle 20", "Sposta la psicologa a venerdì alle 17", "Cancella studio di domani", "Spesa 25 euro Esselunga", "Ho pagato l'INPS", "Fatto il ripasso di anatomia"];
   let A = null, req = 0, piano = [], timer = null;
   const $ = id => document.getElementById(id);
 
@@ -85,7 +85,12 @@
       if (c.importo) return resolve({ tipo: "movimento", cosa: cap1(c.cerca) || c.categoria, categoria: c.categoria, importo: c.importo, data: c.data, fatto: true, entrata: c.entrata });
       return { ok: false, txt: "Non trovo \"" + esc(c.cerca) + "\" tra " + (c.entrata ? "le entrate da incassare" : "i pagamenti da fare") + ". Se è una spesa nuova dimmi anche l'importo." };
     }
+    if (c.tipo === "todo") {
+      return { ok: true, icon: "+", txt: "Aggiungo alle priorità <strong>" + esc(c.testo) + "</strong>.", run: async () => { A.addTodo(c.testo); return "Aggiunto alle priorità"; } };
+    }
     if (c.tipo === "step") {
+      const td = bestMatch((A.data().todo || []).filter(t => !t.fatto), c.cerca, t => t.testo, () => 0.1);
+      if (td) return { ok: true, icon: "✓", txt: "Spunto la priorità <strong>" + esc(td.testo) + "</strong>.", run: async () => { A.setTodo(td.id, true); return null; } };
       const all = [];
       for (const g of A.data().obiettivi) for (const st of g.step) if (!st.fatto) all.push({ g, st });
       const hit = bestMatch(all, c.cerca, x => x.st.testo + " " + x.g.nome + " " + (x.g.breve || ""));

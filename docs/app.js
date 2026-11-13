@@ -212,8 +212,9 @@
   const H_DAYS = ["Data", "Priorità 1", "Priorità 2", "Priorità 3", "Fatta 1", "Fatta 2", "Fatta 3"];
   const H_SET = ["Impostazione", "Valore"];
   const H_MOV = ["Data", "Cosa", "Categoria", "Importo", "Fatto", "ID", "ID evento"];
-  const TABS = ["Obiettivi", "Priorità", "Impostazioni", "Movimenti", "Resoconto"];
-  const RANGES = ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50", "Movimenti!A1:G3000"];
+  const TABS = ["Obiettivi", "Priorità", "Impostazioni", "Movimenti", "Resoconto", "Da fare"];
+  const H_TODO = ["Cosa", "Aggiunta il", "Fatta", "Fatta il", "ID"];
+  const RANGES = ["Obiettivi!A1:J1000", "Priorità!A1:G400", "Impostazioni!A1:B50", "Movimenti!A1:G3000", "'Da fare'!A1:E1000"];
   let tabsOk = false;
   async function ensureTabs() {
     if (tabsOk) return;
@@ -264,9 +265,10 @@
     const days = [H_DAYS].concat(Object.keys(d.giorni).sort().map(k => { const g = d.giorni[k]; return [k].concat(g.priorita.slice(0, 3), g.fatte.slice(0, 3).map(x => x ? "sì" : "")); }));
     const set = [H_SET].concat(Object.keys(d.settings).map(k => [k, d.settings[k]]));
     const movs = [H_MOV].concat((d.movimenti || []).slice().sort((a, b) => a.data.localeCompare(b.data)).map(m => [m.data, m.cosa, m.categoria, m.importo, m.fatto ? "Sì" : "No", m.id, m.evento || ""]));
-    return { goals, days, set, movs, res: resocontoRows(d.movimenti || []) };
+    const todo = [H_TODO].concat((d.todo || []).map(t => [t.testo, t.creato, t.fatto ? "Sì" : "No", t.fattoIl || "", t.id]));
+    return { goals, days, set, movs, todo, res: resocontoRows(d.movimenti || []) };
   }
-  function fromRows(goalRows, dayRows, setRows, movRows, movTab) {
+  function fromRows(goalRows, dayRows, setRows, movRows, movTab, todoRows) {
     const d = { version: 1, updatedAt: Date.now(), settings: Object.assign({}, seedData().settings), giorni: {}, obiettivi: [] };
     const byId = {};
     for (const r of (goalRows || []).slice(1)) {
@@ -286,6 +288,14 @@
       d.giorni[k] = { priorita: [1, 2, 3].map(i => String(r[i] || "")), fatte: [4, 5, 6].map(i => yes(r[i])) };
     }
     for (const r of (setRows || []).slice(1)) { const k = String(r[0] || "").trim(); if (k in d.settings && r[1]) d.settings[k] = String(r[1]).trim(); }
+    if (todoRows && todoRows.length) {
+      d.todo = [];
+      for (const r of todoRows.slice(1)) {
+        const testo = String(r[0] || "").trim(); if (!testo) continue;
+        const creato = serialToYmd(r[1]);
+        d.todo.push({ id: String(r[4] || "").trim() || uid(), testo, creato: /^\d{4}-\d{2}-\d{2}$/.test(creato) ? creato : ymd(new Date()), fatto: yes(r[2]), fattoIl: serialToYmd(r[3]) || "" });
+      }
+    }
     if (movTab) {
       d.movimenti = [];
       const hd = (movRows[0] || []).map(x => String(x || "").trim().toLowerCase());
@@ -309,7 +319,8 @@
     const v = (j.valueRanges || []).map(x => x.values || []);
     lastRead = Date.now();
     const movTab = !missing.includes("Movimenti") && (v[3] || []).length > 0;
-    return { empty: (v[0] || []).length <= 1, data: fromRows(v[0], v[1], v[2], v[3], movTab) };
+    const todoTab = !missing.includes("Da fare") && (v[4] || []).length > 0;
+    return { empty: (v[0] || []).length <= 1, data: fromRows(v[0], v[1], v[2], v[3], movTab, todoTab ? v[4] : null) };
   }
   async function sheetWrite() {
     if (!sheetId && !(await sheetFind())) await sheetCreate();
@@ -317,7 +328,7 @@
     const rows = toRows();
     await gfetch(SAPI + "/" + sheetId + "/values:batchClear", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ranges: RANGES.concat(["Resoconto!A1:N80"]) }) });
     await gfetch(SAPI + "/" + sheetId + "/values:batchUpdate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ valueInputOption: "RAW", data: [
-      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }, { range: "Movimenti!A1", values: rows.movs }, { range: "Resoconto!A1", values: rows.res }
+      { range: "Obiettivi!A1", values: rows.goals }, { range: "Priorità!A1", values: rows.days }, { range: "Impostazioni!A1", values: rows.set }, { range: "Movimenti!A1", values: rows.movs }, { range: "Resoconto!A1", values: rows.res }, { range: "'Da fare'!A1", values: rows.todo }
     ] }) });
     setDirty(false); lastRead = Date.now();
   }
@@ -328,7 +339,7 @@
       if (!(await sheetFind())) { await sheetWrite(); state.sync = "saved"; state.sheetReady = true; if (reconcilePay()) changed(); renderAll(); return; }
       const res = await sheetRead();
       if (res.empty) await sheetWrite();
-      else { state.data = res.data; writeLocal(); if (ensureMovimenti()) changed(); }
+      else { state.data = res.data; writeLocal(); const a = ensureMovimenti(), b = ensureTodo(); if (a || b) changed(); }
       state.sync = "saved"; state.sheetReady = true;
       if (reconcilePay()) changed();
       renderAll();
@@ -479,7 +490,6 @@
     const d = state.dayFocus, key = ymd(d);
     const st = dayStats(d);
     const today = sameDay(d, new Date());
-    const g = state.data.giorni[key] || { priorita: ["", "", ""], fatte: [false, false, false] };
     const ok = state.cal === "ok";
     const tot = overall();
 
@@ -494,11 +504,7 @@
     }
 
     if (today) html += oggiPagamenti();
-    html += '<div class="card"><h3>Le 3 priorità</h3>';
-    for (let i = 0; i < 3; i++) {
-      html += '<div class="check' + (g.fatte[i] ? " done" : "") + '"><input type="checkbox" id="pf' + i + '" aria-label="Fatta"' + (g.fatte[i] ? " checked" : "") + '><input type="text" id="pt' + i + '" maxlength="120" placeholder="' + ["La cosa più importante", "Seconda cosa", "Terza cosa"][i] + '" value="' + esc(g.priorita[i] || "") + '"><span></span></div>';
-    }
-    html += "</div>";
+    html += todoCard();
 
     html += '<div class="card"><h3>Agenda</h3><div class="timeline">';
     if (ok) html += st.evs.length ? st.evs.map(evRow).join("") : '<p class="muted">Nessun evento in calendario. Scegli una cosa che ti ricarica.</p>';
@@ -516,19 +522,68 @@
       (ok && st.late ? '<p class="notice warn">Stasera finisci tardi. Domattina non mettere niente prima delle 10, se puoi.</p>' : '<p class="muted small">Stesso orario tutti i giorni, anche la domenica: è la regola che ti protegge di più.</p>') + "</div>";
 
     el.innerHTML = html;
-    for (let i = 0; i < 3; i++) {
-      document.getElementById("pf" + i).onchange = savePriorities;
-      document.getElementById("pt" + i).onchange = savePriorities;
-    }
+    const nw = document.getElementById("todo-new");
+    const take = () => { const v = nw.value; nw.value = ""; addTodo(v); };
+    nw.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); take(); } });
+    nw.addEventListener("change", take);
+    el.querySelectorAll("[data-todotxt]").forEach(inp => inp.addEventListener("change", () => editTodo(inp.dataset.todotxt, inp.value)));
   }
-  function savePriorities() {
-    const key = ymd(state.dayFocus);
-    const v = { priorita: [0, 1, 2].map(i => document.getElementById("pt" + i).value.trim()), fatte: [0, 1, 2].map(i => document.getElementById("pf" + i).checked) };
-    const empty = v.priorita.every(x => !x) && v.fatte.every(x => !x);
-    if (empty) delete state.data.giorni[key]; else state.data.giorni[key] = v;
-    pruneDays();
-    changed();
-    renderOggi();
+  // Priorità che non si azzerano: restano finché non le spunti.
+  // La prima volta recupero quelle non fatte degli ultimi 30 giorni dalle vecchie priorità del giorno.
+  function ensureTodo() {
+    if (Array.isArray(state.data.todo)) return false;
+    const out = [], seen = new Set(), today = ymd(new Date()), from = ymd(addDays(new Date(), -30));
+    for (const k of Object.keys(state.data.giorni || {}).sort()) {
+      if (k < from || k > today) continue;
+      const g = state.data.giorni[k];
+      g.priorita.forEach((t, i) => {
+        t = String(t || "").trim(); const low = t.toLowerCase();
+        if (!t || seen.has(low)) return;
+        if (g.fatte[i] && k !== today) return;
+        seen.add(low);
+        out.push({ id: uid(), testo: t, creato: k, fatto: !!g.fatte[i], fattoIl: g.fatte[i] ? k : "" });
+      });
+    }
+    state.data.todo = out;
+    return true;
+  }
+  function todoVisible() {
+    const today = ymd(new Date());
+    return state.data.todo.filter(t => !t.fatto || t.fattoIl === today);
+  }
+  function pruneTodo() {
+    const limit = ymd(addDays(new Date(), -30));
+    state.data.todo = state.data.todo.filter(t => !t.fatto || (t.fattoIl || "") >= limit);
+  }
+  function todoAge(t) {
+    const n = daysBetween(parseYmd(t.creato), new Date());
+    return n <= 0 ? "" : n === 1 ? "da ieri" : "da " + n + " giorni";
+  }
+  function todoCard() {
+    const list = todoVisible(), open = list.filter(t => !t.fatto).length;
+    let html = '<div class="card" id="todo-card"><div class="row between"><h3>Le mie priorità</h3>' + (list.length ? '<span class="chip ' + (open ? "soft" : "ok") + '">' + (open ? open + " da fare" : "tutto fatto") + "</span>" : "") + "</div>";
+    html += list.map(t => '<div class="check' + (t.fatto ? " done" : "") + '"><input type="checkbox" data-todo="' + t.id + '" aria-label="Fatta"' + (t.fatto ? " checked" : "") + '><input type="text" data-todotxt="' + t.id + '" maxlength="120" value="' + esc(t.testo) + '"><span class="meta">' + (t.fatto ? "" : esc(todoAge(t))) + "</span></div>").join("");
+    html += '<div class="check add"><span class="plus" aria-hidden="true">+</span><input type="text" id="todo-new" maxlength="120" placeholder="' + (list.length ? "Aggiungi un'altra cosa" : "La cosa più importante") + '" enterkeyhint="done"><span></span></div>';
+    html += '<p class="muted small">Restano qui finché non le spunti. Quelle fatte spariscono il giorno dopo.</p></div>';
+    return html;
+  }
+  function addTodo(txt) {
+    txt = String(txt || "").trim(); if (!txt) return;
+    state.data.todo.push({ id: uid(), testo: txt, creato: ymd(new Date()), fatto: false, fattoIl: "" });
+    changed(); renderOggi();
+    const n = document.getElementById("todo-new"); if (n) n.focus();
+  }
+  function setTodo(id, done) {
+    const t = state.data.todo.find(x => x.id === id); if (!t) return;
+    t.fatto = done; t.fattoIl = done ? ymd(new Date()) : "";
+    if (done) toast("Bene! Una cosa in meno");
+    pruneTodo(); changed(); renderOggi();
+  }
+  function editTodo(id, txt) {
+    const t = state.data.todo.find(x => x.id === id); if (!t) return;
+    txt = String(txt || "").trim();
+    if (!txt) state.data.todo = state.data.todo.filter(x => x !== t); else t.testo = txt;
+    changed(); renderOggi();
   }
   function pruneDays() {
     const limit = ymd(addDays(new Date(), -60));
@@ -1124,6 +1179,7 @@
     const t = e.target;
     if (t.dataset && t.dataset.step) toggleStep(t.dataset.step, t.checked);
     else if (t.dataset && t.dataset.pay) payItem(t.dataset.pay);
+    else if (t.dataset && t.dataset.todo) setTodo(t.dataset.todo, t.checked);
     else if (t.dataset && t.dataset.unpay) unpayItem(t.dataset.unpay);
   });
 
@@ -1155,6 +1211,7 @@
     isAuthError: e => e instanceof AuthError,
     catText: key => { const c = CATS.find(x => x.key === key); return c ? c.label + " " + c.words.join(" ") : ""; },
     data: () => state.data,
+    setTodo, addTodo: txt => { state.data.todo.push({ id: uid(), testo: txt, creato: ymd(new Date()), fatto: false, fattoIl: "" }); changed(); renderAll(); },
     addMovimento(m) { state.data.movimenti.push(Object.assign({ id: uid(), evento: "" }, m)); changed(); renderAll(); },
     afterCalendarChange(day) {
       const ws = mondayOf(parseYmd(day));
@@ -1170,7 +1227,7 @@
   state.data = readLocal() || seedData();
   if (!state.data.giorni) state.data.giorni = {};
   if (!state.data.settings.tema) state.data.settings.tema = "chiaro";
-  if (ensureMovimenti()) writeLocal();
+  { const a = ensureMovimenti(), b = ensureTodo(); if (a || b) writeLocal(); }
   let startView = state.view;
   try { if (startView === "oggi") startView = localStorage.getItem(LS_VIEW) || "oggi"; } catch (e) {}
   setView(startView);
