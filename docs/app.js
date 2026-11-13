@@ -548,10 +548,9 @@
     state.data.todo = out;
     return true;
   }
-  function todoVisible() {
-    const today = ymd(new Date());
-    return state.data.todo.filter(t => !t.fatto || t.fattoIl === today);
-  }
+  // le spuntate restano visibili (barrate) solo finché non aggiorni la pagina o tocchi ↻
+  const justDone = new Set();
+  function todoVisible() { return state.data.todo.filter(t => !t.fatto || justDone.has(t.id)); }
   function pruneTodo() {
     const limit = ymd(addDays(new Date(), -30));
     state.data.todo = state.data.todo.filter(t => !t.fatto || (t.fattoIl || "") >= limit);
@@ -565,7 +564,7 @@
     let html = '<div class="card" id="todo-card"><div class="row between"><h3>Priorità</h3>' + (list.length ? '<span class="chip ' + (open ? "soft" : "ok") + '">' + (open ? open + " da fare" : "tutto fatto") + "</span>" : "") + "</div>";
     html += list.map(t => '<div class="check' + (t.fatto ? " done" : "") + '"><input type="checkbox" data-todo="' + t.id + '" aria-label="Fatta"' + (t.fatto ? " checked" : "") + '><input type="text" data-todotxt="' + t.id + '" maxlength="120" value="' + esc(t.testo) + '"><span class="meta">' + (t.fatto ? "" : esc(todoAge(t))) + "</span></div>").join("");
     html += '<div class="check add"><span class="plus" aria-hidden="true">+</span><input type="text" id="todo-new" maxlength="120" placeholder="' + (list.length ? "Aggiungi un'altra cosa" : "La cosa più importante") + '" enterkeyhint="done"><span></span></div>';
-    html += '<p class="muted small">Restano qui finché non le spunti. Quelle fatte spariscono il giorno dopo.</p></div>';
+    html += '<p class="muted small">Restano qui finché non le spunti. Quelle fatte spariscono quando aggiorni.</p></div>';
     return html;
   }
   function addTodo(txt) {
@@ -577,6 +576,7 @@
   function setTodo(id, done) {
     const t = state.data.todo.find(x => x.id === id); if (!t) return;
     t.fatto = done; t.fattoIl = done ? ymd(new Date()) : "";
+    if (done) justDone.add(t.id); else justDone.delete(t.id);
     if (done) toast("Bene! Una cosa in meno");
     pruneTodo(); changed(); renderOggi();
   }
@@ -1193,6 +1193,7 @@
     if (!getToken()) { if (CFG.googleClientId) login(false); return; }
     const b = document.getElementById("refresh"); b.disabled = true;
     if (window.__agendaCheckUpdate) window.__agendaCheckUpdate();
+    justDone.clear();
     if (state.tempoMode === "mese") state.month.status = "stale";
     await Promise.all([loadWeek(), syncSheet(), state.tempoMode === "mese" ? loadMonth() : null, loadPayments(true)]);
     b.disabled = false;
