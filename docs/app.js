@@ -27,7 +27,7 @@
   const CATS_SOLDI = ["Stipendio", "Altre entrate", "Tasse", "Rate", "Spesa", "Benzina", "Extra"];
   const ENTRATE = new Set(["Stipendio", "Altre entrate"]);
   const TRACK_START = "2026-11-01";
-  const PASTI_H = 2.5;
+  const PASTI_H = 3; // cucinare, mangiare e lavare i piatti: blocco fisso ogni giorno
   const GOAL_COLORS = ["studio", "danza", "lavoro", "psico", "ricarica", "soldi"];
 
   const PRESETS = [
@@ -838,7 +838,7 @@
     const keys = TEMPO_ORDER.filter(k => out[k] > 0.01);
     const maxH = Math.max(...keys.map(k => out[k]), 1);
     html += '<div class="stack" aria-hidden="true">' + keys.map(k => '<i style="width:' + (out[k] / awake * 100).toFixed(2) + '%;background:var(--c-' + k + ')"></i>').join("") + "</div>";
-    html += '<p class="muted small">Su ' + hoursTxt(awake) + " da sveglia " + label + ", calcolate dal calendario e dall'orario del sonno, con 2 ore e 30 al giorno per i pasti.</p>";
+    html += '<p class="muted small">Su ' + hoursTxt(awake) + " da sveglia " + label + ", calcolate dal calendario e dall'orario del sonno, con 3 ore fisse al giorno per i pasti.</p>";
     html += keys.map(k => '<div class="trow"><span class="sq" style="background:var(--c-' + k + ')"></span><span class="lab">' + TEMPO_LABEL[k] + '<span class="mini"><i style="width:' + (out[k] / maxH * 100).toFixed(1) + '%;background:var(--c-' + k + ')"></i></span></span><span class="h">' + hoursTxt(out[k]) + " <small>" + Math.round(out[k] / awake * 100) + "%</small></span></div>").join("");
     if (out.libero / awake < 0.2) html += '<p class="notice warn">Il tempo libero è sotto il 20%. Proteggi almeno una sera senza impegni.</p>';
     return html + "</div>";
