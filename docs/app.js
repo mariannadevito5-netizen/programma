@@ -31,11 +31,12 @@
   const GOAL_COLORS = ["studio", "danza", "lavoro", "psico", "ricarica", "soldi"];
 
   const PRESETS = [
-    { id: "split", label: "Turno 10–14 e 16–20", parts: [["10:00", "14:00"], ["16:00", "20:00"]] },
-    { id: "m", label: "Turno 9–15", parts: [["09:00", "15:00"]] },
-    { id: "p", label: "Turno 15–21", parts: [["15:00", "21:00"]] },
-    { id: "c", label: "Turno 12–19", parts: [["12:00", "19:00"]] },
-    { id: "sab", label: "Sabato mattina", parts: null },
+    { id: "split", label: "Turno 10:30–14 e 16–20", parts: [["10:30", "14:00"], ["16:00", "20:00"]] },
+    { id: "m", label: "Turno 9–16:30", parts: [["09:00", "16:30"]] },
+    { id: "p", label: "Turno 13:30–21", parts: [["13:30", "21:00"]] },
+    { id: "c", label: "Turno 12–20", parts: [["12:00", "20:00"]] },
+    { id: "sabm", label: "Sabato 9–13:30", parts: [["09:00", "13:30"]] },
+    { id: "sabp", label: "Sabato 13:30–18", parts: [["13:30", "18:00"]] },
     { id: "altro", label: "Altro impegno", parts: [] }
   ];
 
@@ -951,19 +952,18 @@
   function openAdd(day) {
     const d = day || state.dayFocus;
     document.getElementById("add-date").value = ymd(d);
-    state.preset = d.getDay() === 6 ? "sab" : "split";
+    state.preset = d.getDay() === 6 ? "sabm" : "split";
     document.getElementById("add-error").hidden = true;
     renderPresets();
     document.getElementById("add-sheet").hidden = false;
   }
   function presetParts(p) {
-    if (p.id === "sab") return [[state.data.settings.sabatoInizio, state.data.settings.sabatoFine]];
     if (p.id === "altro") return [[document.getElementById("add-start").value, document.getElementById("add-end").value]];
     return p.parts;
   }
   function renderPresets() {
     const s = state.data.settings;
-    document.getElementById("presets").innerHTML = PRESETS.map(p => '<button class="preset" data-preset="' + p.id + '" aria-pressed="' + (state.preset === p.id) + '">' + esc(p.id === "sab" ? "Sabato " + s.sabatoInizio + "–" + s.sabatoFine : p.label) + "</button>").join("");
+    document.getElementById("presets").innerHTML = PRESETS.map(p => '<button class="preset" data-preset="' + p.id + '" aria-pressed="' + (state.preset === p.id) + '">' + esc(p.label) + "</button>").join("");
     document.getElementById("custom-fields").hidden = state.preset !== "altro";
     updateSummary();
   }
@@ -1061,8 +1061,6 @@
     const s = state.data.settings;
     document.getElementById("set-letto").value = s.letto;
     document.getElementById("set-sveglia").value = s.sveglia;
-    document.getElementById("set-sab-a").value = s.sabatoInizio;
-    document.getElementById("set-sab-b").value = s.sabatoFine;
     document.getElementById("set-account").innerHTML = getToken() ? '<button class="btn ghost sm" id="do-logout">Esci da Google</button>' : CFG.googleClientId ? '<button class="btn sm" data-login>Accedi con Google</button>' : '<span class="muted small">Google non è ancora configurato (guida, passo 2).</span>';
     const url = sheetUrl();
     if (getToken() && url) document.getElementById("set-account").insertAdjacentHTML("beforeend", ' <a class="btn ghost sm" href="' + url + '" target="_blank" rel="noopener">Apri il Foglio dati</a>');
@@ -1073,8 +1071,6 @@
     const s = state.data.settings;
     s.letto = document.getElementById("set-letto").value || s.letto;
     s.sveglia = document.getElementById("set-sveglia").value || s.sveglia;
-    s.sabatoInizio = document.getElementById("set-sab-a").value || s.sabatoInizio;
-    s.sabatoFine = document.getElementById("set-sab-b").value || s.sabatoFine;
     changed();
     document.getElementById("set-sheet").hidden = true;
     toast("Impostazioni salvate");

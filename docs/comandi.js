@@ -9,10 +9,10 @@
   const MESI = ["gennaio", "febbraio", "marzo", "aprile", "maggio", "giugno", "luglio", "agosto", "settembre", "ottobre", "novembre", "dicembre"];
   const NUM = { "un": 1, "una": 1, "uno": 1, "due": 2, "tre": 3, "quattro": 4, "cinque": 5, "sei": 6, "sette": 7, "otto": 8, "nove": 9, "dieci": 10, "undici": 11, "dodici": 12, "tredici": 13, "quattordici": 14, "quindici": 15, "sedici": 16, "diciassette": 17, "diciotto": 18, "diciannove": 19, "venti": 20, "ventuno": 21, "ventidue": 22, "ventitré": 23, "trenta": 30, "quaranta": 40, "cinquanta": 50, "cento": 100, "mezzogiorno": 12, "mezzanotte": 0 };
   const SHIFTS = [
-    { re: /\bturno spezzato\b|\b10\s*-\s*14 e 16\s*-\s*20\b/, parts: [["10:00", "14:00"], ["16:00", "20:00"]] },
-    { re: /\bturno (di |della )?mattina\b/, parts: [["09:00", "15:00"]] },
-    { re: /\bturno (di |del )?pomeriggio\b/, parts: [["15:00", "21:00"]] },
-    { re: /\bturno centrale\b/, parts: [["12:00", "19:00"]] }
+    { re: /\bturno spezzato\b|\b10(?::| e |\.)30\s*-\s*14 e 16\s*-\s*20\b/, parts: [["10:30", "14:00"], ["16:00", "20:00"]] },
+    { re: /\bturno (di |della |del )?mattin[ao]\b/, parts: [["09:00", "16:30"]], sab: [["09:00", "13:30"]] },
+    { re: /\bturno (di |del )?pomeriggio\b/, parts: [["13:30", "21:00"]], sab: [["13:30", "18:00"]] },
+    { re: /\bturno centrale\b/, parts: [["12:00", "20:00"]] }
   ];
   const STOP = new Set(["il", "lo", "la", "i", "gli", "le", "l", "un", "una", "uno", "di", "del", "della", "dello", "dei", "delle", "a", "al", "alla", "allo", "ai", "da", "dal", "dalla", "in", "per", "con", "e", "che", "mi", "ho", "devo", "poi", "anche", "per favore", "favore", "ok", "allora", "quello", "quella", "evento", "appuntamento", "impegno"]);
 
@@ -96,7 +96,8 @@
   const T = "(\\d{1,2}(?:(?::|\\.)\\d{2}| e (?:mezza|mezzo|un quarto|quarto|tre quarti|\\d{1,2})| meno (?:un quarto|quarto|\\d{1,2}))?)";
   function takeTimes(t) {
     let m, a = null, b = null, dur = null, parts = null;
-    for (const s of SHIFTS) if (s.re.test(t)) { parts = s.parts; t = t.replace(s.re, " turno "); break; }
+    let sabParts = null;
+    for (const s of SHIFTS) if (s.re.test(t)) { parts = s.parts; sabParts = s.sab || null; t = t.replace(s.re, " turno "); break; }
     if (!parts && (m = t.match(new RegExp(" (?:dalle |dall |da )?(?:ore )?" + T + " ?(?:-|alle|all|fino alle|a) " + T + "(?= )(?: e (?:dalle |dall )?" + T + " ?(?:-|alle|all) " + T + ")? ")))) {
       const r = [[readTime(m[1]), readTime(m[2])]]; if (m[3]) r.push([readTime(m[3]), readTime(m[4])]);
       if (r.every(p => p[0] && p[1])) {
@@ -118,7 +119,7 @@
       parts = [[hhmm(a.h, a.min), hhmm(Math.floor(endM / 60), endM % 60)]];
     }
     t = t.replace(/ (di |del |della |nel )?(mattina|sera|pomeriggio|notte) /g, " ");
-    return { t, parts, start: a ? hhmm(a.h, a.min) : null };
+    return { t, parts, sabParts, start: a ? hhmm(a.h, a.min) : null };
   }
 
   // ---------- Soldi ----------
@@ -215,6 +216,7 @@
     if (turno && /^(turno|lavoro)( palestra| vibe)?$/.test(title)) title = "Turno palestra";
     if (!title) return { tipo: "errore", motivo: "Non ho capito cosa aggiungere. Prova con \"aggiungi danza giovedì dalle 18 alle 20\".", testo: raw };
     if (!d.date && !tm.parts) return { tipo: "errore", motivo: "Mi manca il giorno o l'orario. Prova con \"" + cap(title) + " domani alle 18\".", testo: raw };
+    if (tm.sabParts && d.date && d.date.getDay() === 6) tm.parts = tm.sabParts;
     return { tipo: "aggiungi", titolo: cap(restore(title, raw)), data: ymd(d.date || now), parti: tm.parts || null, turno, testo: raw };
   }
 
